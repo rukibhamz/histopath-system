@@ -1,0 +1,11 @@
+# Never serve directory listings
+Options -Indexes
+
+# Keep schema, docs, and any stray data files out of the browser.
+# The .sqlite rules are a backstop - the database belongs outside the web root.
+<FilesMatch "\.(sql|sqlite|sqlite3|db|md|csv|log|ini|bak|sh)$">
+    Require all denied
+</FilesMatch>
+
+# Send visitors to the login page rather than a directory listing
+DirectoryIndex login.php index.php

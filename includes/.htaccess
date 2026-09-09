@@ -1,0 +1,3 @@
+# Nothing in this directory is meant to be requested directly.
+# db_connect.php holds database credentials.
+Require all denied
