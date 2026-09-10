@@ -15,6 +15,9 @@ function normalize_header(string $h): string {
 function guess_column(string $header, array $db_columns): ?string {
     $norm = normalize_header($header);
     $aliases = [
+        'id' => ['id'],
+        'record_id' => ['id'],
+        'report_id' => ['id'],
         'hosp_no' => ['hospital_no', 'hosp_no'],
         'hospital_no' => ['hospital_no', 'hosp_no'],
         'age_years' => ['age'],
@@ -33,9 +36,11 @@ function guess_column(string $header, array $db_columns): ?string {
     }
     // Direct match
     if (in_array($norm, $db_columns, true)) return $norm;
-    // Contains-based fallback
+    // Contains-based fallback. Skip short tokens ("id", "no") so they cannot
+    // match inside longer names such as resident_doctors or hospital_no.
     foreach ($db_columns as $col) {
-        if (str_contains($norm, $col) || str_contains($col, $norm)) return $col;
+        if (strlen($col) >= 3 && str_contains($norm, $col)) return $col;
+        if (strlen($norm) >= 4 && str_contains($col, $norm)) return $col;
     }
     return null;
 }

@@ -360,7 +360,7 @@ $titles = [1 => 'Server Check', 2 => 'Database', 3 => 'Administrator', 4 => 'Hos
 <head>
 <meta charset="utf-8">
 <title>Setup - Histopathology Records System</title>
-<link rel="stylesheet" href="<?= h(app_url('assets/app.css')) ?>">
+<link rel="stylesheet" href="<?= h(asset_url('assets/app.css')) ?>">
 <style>
     /* The wizard runs before any branding is configured, so the palette is fixed. */
     :root {

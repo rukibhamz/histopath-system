@@ -106,16 +106,12 @@ function load_editable_report(PDO $pdo, string $table, int $id): array {
         die("Record not found.");
     }
 
-    if (current_role() === 'staff') {
-        if ((int)$record['submitted_by'] !== current_user_id()) {
-            http_response_code(403);
-            die("Access denied - you may only edit records you submitted.");
-        }
-        if ($record['status'] === 'approved') {
-            http_response_code(403);
-            die("This report has been approved and can no longer be edited. "
-              . "Ask a reviewer or administrator if a correction is needed.");
-        }
+    if (!can_edit_report($record)) {
+        http_response_code(403);
+        die($record['status'] === 'approved'
+            ? "This report has been approved and can no longer be edited. "
+              . "Ask a reviewer or administrator if a correction is needed."
+            : "Access denied - you may only edit records you submitted.");
     }
 
     return $record;

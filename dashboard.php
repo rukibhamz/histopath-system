@@ -88,7 +88,7 @@ render_header([
     <div class="stat">
         <div class="stat__label">Awaiting review</div>
         <div class="stat__value"><?= $pending_count ?></div>
-        <a class="stat__link" href="<?= app_url('records/list.php?status=pending') ?>">View</a>
+        <a class="stat__link" href="<?= app_url('records/list.php?status=pending') ?>">Review and approve &rarr;</a>
     </div>
     <div class="stat">
         <div class="stat__label">Active accounts</div>
@@ -115,7 +115,7 @@ render_header([
     </a>
     <a class="tile" href="<?= app_url('records/list.php') ?>">
         <div class="tile__title">Find a record</div>
-        <div class="tile__desc">Search by lab number, hospital number or patient name</div>
+        <div class="tile__desc">Search by lab number, name, diagnosis, or nature of specimen</div>
     </a>
 </div>
 <?php endif; ?>

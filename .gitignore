@@ -1,0 +1,19 @@
+# Written by the setup wizard — never commit a live install.
+includes/config.php
+
+# Local database files if someone points SQLite at the project folder
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+
+# OS / editor
+Thumbs.db
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Logos uploaded through Settings belong to one installation
+assets/uploads/*
+!assets/uploads/.htaccess

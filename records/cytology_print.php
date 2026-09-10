@@ -24,10 +24,7 @@ if (current_role() === 'staff'
 
 log_action($pdo, current_user_id(), 'view_record', 'cytology_reports', $id);
 
-$can_edit = current_role() === 'admin'
-         || (current_role() === 'staff'
-             && (int)$r['submitted_by'] === current_user_id()
-             && $r['status'] !== 'approved');
+$can_edit = can_edit_report($r);
 
 $actions = print_button('Print report');
 if ($can_edit) {
@@ -42,7 +39,7 @@ render_header([
     'heading' => 'Cytology report',
     'lead'    => 'Lab number ' . e($r['lab_no']) . ' &middot; ' . status_badge($r['status']),
     'nav'     => 'records',
-    'narrow'  => true,
+    'narrow'  => false,
     'back'    => ['label' => 'Back to records', 'url' => 'records/list.php'],
     'actions' => $actions,
 ]);
@@ -57,5 +54,10 @@ render_header([
 <div class="report">
     <?php require __DIR__ . '/_cytology_body.php'; ?>
 </div>
+
+<?php
+$type = 'cytology';
+require __DIR__ . '/_approve_actions.php';
+?>
 
 <?php render_footer(); ?>

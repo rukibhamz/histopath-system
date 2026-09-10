@@ -68,14 +68,17 @@ render_header([
     'title'   => 'Review ' . $r['lab_no'],
     'heading' => 'Review ' . ucfirst($type) . ' Report',
     'lead'    => 'Lab number ' . e($r['lab_no']) . ' &middot; ' . status_badge($r['status']),
-    'nav'     => 'records',
-    'narrow'  => true,
+    'nav'     => $r['status'] === 'pending' ? 'pending' : 'records',
+    'narrow'  => false,
     'back'    => ['label' => 'Back to records', 'url' => 'records/list.php'],
-    'actions' => print_button('Print report'),
+    'actions' => print_button('Print report')
+        . (can_edit_report($r)
+            ? '<a class="btn" href="' . app_url('records/' . $type . '_form.php') . '?id=' . (int)$id . '">Edit</a>'
+            : ''),
 ]);
 ?>
 
-<div class="card" style="margin-bottom:18px;">
+<div class="card no-print" style="margin-bottom:18px;">
     <div class="card__body">
         <div class="grid grid--2">
             <div>
@@ -95,7 +98,7 @@ render_header([
 </div>
 
 <?php if (!empty($r['reviewer_comments'])): ?>
-    <div class="alert alert--warn">
+    <div class="alert alert--warn no-print">
         <strong>Previous reviewer comments</strong><br><?= nl2br(e($r['reviewer_comments'])) ?>
     </div>
 <?php endif; ?>

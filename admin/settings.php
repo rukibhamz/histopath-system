@@ -3,14 +3,87 @@ require_once __DIR__ . '/../includes/auth.php';
 require_login();
 require_role(['admin']);
 
+const LOGO_MAX_BYTES = 2 * 1024 * 1024;
+const LOGO_DIR = 'assets/uploads';
+
 $message = '';
 $errors = [];
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+/**
+ * Checks an uploaded logo and stores it under assets/uploads with a name of our choosing.
+ * Returns the app-relative path, or null with $error explaining why not.
+ */
+function store_logo_upload(array $file, ?string &$error): ?string {
+    $error = null;
+
+    switch ($file['error'] ?? UPLOAD_ERR_NO_FILE) {
+        case UPLOAD_ERR_OK:
+            break;
+        case UPLOAD_ERR_INI_SIZE:
+        case UPLOAD_ERR_FORM_SIZE:
+            $error = 'That image is larger than the server allows (' . ini_get('upload_max_filesize') . '). Save a smaller copy and try again.';
+            return null;
+        case UPLOAD_ERR_PARTIAL:
+            $error = 'The logo only partly uploaded. Please try again.';
+            return null;
+        default:
+            $error = 'The logo could not be uploaded (error code ' . (int)$file['error'] . ').';
+            return null;
+    }
+
+    if ($file['size'] > LOGO_MAX_BYTES) {
+        $error = 'The logo must be 2MB or smaller.';
+        return null;
+    }
+
+    // Judge the file by its contents, never by its name or the type the browser claims.
+    $info = @getimagesize($file['tmp_name']);
+    $types = [IMAGETYPE_PNG => 'png', IMAGETYPE_JPEG => 'jpg', IMAGETYPE_GIF => 'gif', IMAGETYPE_WEBP => 'webp'];
+    if ($info === false || !isset($types[$info[2]])) {
+        $error = 'The logo must be a PNG, JPG, GIF or WebP image.';
+        return null;
+    }
+
+    $dir = dirname(__DIR__) . '/' . LOGO_DIR;
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+        $error = 'The folder ' . LOGO_DIR . ' could not be created. Make sure the web server can write to the application folder.';
+        return null;
+    }
+    if (!is_writable($dir)) {
+        $error = 'The folder ' . LOGO_DIR . ' is not writable by the web server.';
+        return null;
+    }
+
+    $name = 'logo-' . bin2hex(random_bytes(6)) . '.' . $types[$info[2]];
+    if (!move_uploaded_file($file['tmp_name'], $dir . '/' . $name)) {
+        $error = 'The logo could not be saved on the server.';
+        return null;
+    }
+    return LOGO_DIR . '/' . $name;
+}
+
+/** Deletes a logo this page uploaded earlier. Never touches any other file. */
+function delete_uploaded_logo(string $stored): void {
+    $relative = ltrim($stored, '/');
+    if (preg_match('#^assets/uploads/logo-[a-f0-9]+\.(png|jpg|gif|webp)$#', $relative)) {
+        @unlink(dirname(__DIR__) . '/' . $relative);
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST) && empty($_FILES)
+    && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+    // A request bigger than post_max_size arrives with every field and file stripped,
+    // which would otherwise be rejected as a forged form. Say what actually happened.
+    // (A post carrying only a file still has $_FILES, so it goes through the CSRF check.)
+    $errors[] = 'That upload is larger than the server accepts (' . ini_get('post_max_size') . '). Use a smaller logo image.';
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
+
+    $current_logo = setting('logo_path');
 
     $submitted = [];
     foreach (SETTING_DEFAULTS as $key => $default) {
+        if ($key === 'logo_path') continue;
         $submitted[$key] = trim((string)($_POST[$key] ?? ''));
     }
 
@@ -24,13 +97,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = "Network address must start with http:// or https://";
     }
 
-    // The logo is referenced by URL/path, so keep it to a same-origin path and
-    // don't let it become an arbitrary external or javascript: URL.
-    if ($submitted['logo_path'] !== '' && !preg_match('#^/[A-Za-z0-9._/\-]*$#', $submitted['logo_path'])) {
-        $errors[] = "Logo path must be a path on this server starting with '/', e.g. /assets/logo.png";
+    // Logo: a new upload replaces it, the remove box clears it, otherwise it is kept.
+    $new_logo = $current_logo;
+    $uploaded = null;
+    if (($_FILES['logo_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+        $uploaded = store_logo_upload($_FILES['logo_file'], $upload_error);
+        if ($uploaded === null) {
+            $errors[] = $upload_error;
+        } else {
+            $new_logo = $uploaded;
+        }
+    } elseif (!empty($_POST['remove_logo'])) {
+        $new_logo = '';
     }
+    $submitted['logo_path'] = $new_logo;
 
-    if (!$errors) {
+    if ($errors) {
+        // Nothing is being saved, so don't leave the new file lying around.
+        if ($uploaded !== null) delete_uploaded_logo($uploaded);
+    } else {
         $now = sql_now();
         $stmt = $pdo->prepare("
             INSERT INTO system_settings (setting_key, setting_value, updated_by, updated_at)
@@ -47,15 +132,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'uid' => current_user_id(),
             ]);
         }
-        log_action($pdo, current_user_id(), 'update_settings', 'system_settings', null, 'Updated branding/appearance settings');
+
+        if ($new_logo !== $current_logo) {
+            delete_uploaded_logo($current_logo);
+        }
+
+        $details = 'Updated branding/appearance settings'
+                 . ($uploaded !== null ? '; uploaded a new logo' : ($new_logo === '' && $current_logo !== '' ? '; removed the logo' : ''));
+        log_action($pdo, current_user_id(), 'update_settings', 'system_settings', null, $details);
         $message = "Settings saved. They now apply across every screen and printed report.";
     }
 }
 
-// Re-read after saving so the preview below reflects what was just stored.
-$settings = $_SERVER['REQUEST_METHOD'] === 'POST' && !$errors
-    ? array_merge(SETTING_DEFAULTS, $pdo->query("SELECT setting_key, setting_value FROM system_settings")->fetchAll(PDO::FETCH_KEY_PAIR))
-    : settings();
+// Re-read so the page, sidebar and preview all reflect what was just stored.
+$settings = settings(true);
+$logo_now = logo_url();
 
 render_header([
     'title'  => 'Settings',
@@ -68,7 +159,7 @@ render_header([
 <?php if ($message): ?><div class="alert alert--ok"><?= e($message) ?></div><?php endif; ?>
 <?php render_errors($errors); ?>
 
-<form method="POST">
+<form method="POST" enctype="multipart/form-data">
     <?= csrf_field() ?>
 
     <div class="section">
@@ -77,16 +168,46 @@ render_header([
             <div class="field">
                 <label class="label" for="hospital_name">Hospital name</label>
                 <input class="input" id="hospital_name" name="hospital_name" value="<?= e($settings['hospital_name']) ?>">
-                <div class="hint">Appears in the top bar and on every printed report.</div>
+                <div class="hint">Appears in the sidebar and on every printed report.</div>
             </div>
             <div class="field">
                 <label class="label" for="department_name">Department name</label>
                 <input class="input" id="department_name" name="department_name" value="<?= e($settings['department_name']) ?>">
             </div>
             <div class="field">
-                <label class="label" for="logo_path">Logo path</label>
-                <input class="input" id="logo_path" name="logo_path" value="<?= e($settings['logo_path']) ?>" placeholder="/assets/logo.png">
-                <div class="hint">A path on this server starting with "/". Leave blank for no logo.</div>
+                <label class="label" for="report_contact">Contact line</label>
+                <input class="input" id="report_contact" name="report_contact" value="<?= e($settings['report_contact']) ?>" placeholder="Tel: 07067165091; 0700HISTOPATH">
+                <div class="hint">Printed under the report title on every histology and cytology report.</div>
+            </div>
+
+            <div class="field">
+                <label class="label" for="logo_file">Logo</label>
+
+                <?php if ($logo_now !== ''): ?>
+                    <div style="display:flex;gap:16px;align-items:center;margin-bottom:12px;">
+                        <img src="<?= e($logo_now) ?>" alt="Current logo"
+                             style="max-height:84px;max-width:140px;object-fit:contain;border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px;background:#fff;">
+                        <div>
+                            <div class="hint" style="margin:0 0 6px;">Current logo</div>
+                            <label style="display:flex;gap:7px;align-items:center;font-size:0.88rem;cursor:pointer;">
+                                <input type="checkbox" name="remove_logo" value="1"> Remove logo
+                            </label>
+                        </div>
+                    </div>
+                <?php elseif ($settings['logo_path'] !== ''): ?>
+                    <div class="alert alert--warn" style="margin-bottom:12px;">
+                        The saved logo <span class="mono"><?= e($settings['logo_path']) ?></span> can't be found
+                        on the server, so no logo is being shown. Upload the image again below.
+                    </div>
+                <?php endif; ?>
+
+                <input class="input" type="file" id="logo_file" name="logo_file"
+                       accept="image/png,image/jpeg,image/gif,image/webp">
+                <div class="hint">
+                    <?= $logo_now !== '' ? 'Choose a file to replace the current logo.' : 'Choose an image to use as the logo.' ?>
+                    PNG, JPG, GIF or WebP, up to 2MB. It appears on the sign-in page, in the sidebar
+                    and on every report.
+                </div>
             </div>
         </div>
     </div>
@@ -133,14 +254,7 @@ render_header([
     <div class="card__head"><h2>Preview</h2></div>
     <div class="card__body">
         <div class="report" style="box-shadow:none;">
-            <div class="report__head">
-                <?php if ($settings['logo_path'] !== ''): ?>
-                    <img src="<?= e($settings['logo_path']) ?>" alt="">
-                <?php endif; ?>
-                <div class="report__org"><?= e($settings['hospital_name']) ?></div>
-                <div class="report__dept"><?= e($settings['department_name']) ?></div>
-                <div class="report__title">Histology Report</div>
-            </div>
+            <div class="rf"><?= report_letterhead('Histology Report') ?></div>
             <div class="form-actions">
                 <span class="btn btn--primary">Primary button</span>
                 <span class="badge badge--approved">Approved</span>

@@ -5,7 +5,7 @@ require_role(['admin', 'reviewer']);
 
 $table_columns = [
     'histology_reports' => [
-        'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'hospital_no',
+        'id', 'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'hospital_no',
         'requesting_hospital', 'ward_clinic', 'date_of_collection', 'clinical_history',
         'nature_of_specimen', 'special_requests', 'provisional_diagnosis', 'previous_lab_no',
         'clinician', 'specimen_status', 'gross', 'microscopy', 'further_tests', 'bone_marrow',
@@ -13,7 +13,7 @@ $table_columns = [
         'date_out', 'adverse_incidents', 'cost', 'status', 'reviewer_comments', 'reviewed_at',
     ],
     'cytology_reports' => [
-        'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'requesting_hospital',
+        'id', 'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'requesting_hospital',
         'hosp_no', 'ward_clinic', 'patients_tel_no', 'date_of_collection', 'clinical_history',
         'lmp', 'drug_history', 'radiation', 'previous_lab_no', 'nature_of_specimen', 'clinician',
         'clinician_tel_no', 'microscopy', 'diagnosis', 'recommendation', 'resident_doctors',

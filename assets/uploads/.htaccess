@@ -1,0 +1,8 @@
+# Uploaded logos live here. Only images may be served from this folder - anything
+# else, including any script that somehow landed here, is refused outright.
+<FilesMatch ".">
+    Require all denied
+</FilesMatch>
+<FilesMatch "\.(?i:png|jpe?g|gif|webp)$">
+    Require all granted
+</FilesMatch>

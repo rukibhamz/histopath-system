@@ -3,10 +3,10 @@ require_once __DIR__ . '/../includes/auth.php';
 require_login();
 require_role(['admin']);
 
-// Columns each table accepts from an import (system-managed columns excluded)
+// Columns each table accepts from an import (status and reviewer fields stay system-managed)
 $table_columns = [
     'histology_reports' => [
-        'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'hospital_no',
+        'id', 'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'hospital_no',
         'requesting_hospital', 'ward_clinic', 'date_of_collection', 'clinical_history',
         'nature_of_specimen', 'special_requests', 'provisional_diagnosis', 'previous_lab_no',
         'clinician', 'specimen_status', 'gross', 'microscopy', 'further_tests', 'bone_marrow',
@@ -14,7 +14,7 @@ $table_columns = [
         'date_out', 'adverse_incidents', 'cost',
     ],
     'cytology_reports' => [
-        'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'requesting_hospital',
+        'id', 'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'requesting_hospital',
         'hosp_no', 'ward_clinic', 'patients_tel_no', 'date_of_collection', 'clinical_history',
         'lmp', 'drug_history', 'radiation', 'previous_lab_no', 'nature_of_specimen', 'clinician',
         'clinician_tel_no', 'microscopy', 'diagnosis', 'recommendation', 'resident_doctors',
@@ -125,6 +125,11 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $data[$db_col] = parse_date($value);
                 } elseif ($db_col === 'sex') {
                     $data[$db_col] = parse_sex($value);
+                } elseif ($db_col === 'id') {
+                    $id = parse_number($value);
+                    if ($id !== null && (int)$id > 0) {
+                        $data[$db_col] = (int)$id;
+                    }
                 } elseif ($db_col === 'age' || $db_col === 'cost') {
                     $data[$db_col] = parse_number($value);
                 } else {
@@ -164,6 +169,14 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         fclose($handle);
         $pdo->commit();
+
+        // Explicit IDs from Access do not advance a PostgreSQL SERIAL sequence.
+        if (!db_is_sqlite()) {
+            $pdo->exec(
+                "SELECT setval(pg_get_serial_sequence(" . $pdo->quote($target_table) . ", 'id'), "
+                . "COALESCE((SELECT MAX(id) FROM $target_table), 1))"
+            );
+        }
 
         log_action($pdo, current_user_id(), 'import_records', $target_table, null,
             "Imported $inserted records, skipped $skipped");

@@ -39,3 +39,14 @@ function current_user_id(): int {
 function current_role(): string {
     return $_SESSION['role'] ?? '';
 }
+
+/** Reviewers and admins may edit any report; staff may edit their own unapproved ones. */
+function can_edit_report(array $record): bool {
+    $role = current_role();
+    if ($role === 'admin' || $role === 'reviewer') {
+        return true;
+    }
+    return $role === 'staff'
+        && (int)$record['submitted_by'] === current_user_id()
+        && $record['status'] !== 'approved';
+}

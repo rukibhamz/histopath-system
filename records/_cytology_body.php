@@ -1,59 +1,64 @@
 <?php
 /**
- * Renders a full cytology report. Expects $r (the record row) in scope.
- * Shared by cytology_print.php and review.php so a reviewer sees exactly
- * what will be printed - every field, not a summary.
+ * Renders a full cytology report in the same paper-form layout as histology.
+ * Expects $r (the record row) in scope. Shared by cytology_print.php and
+ * review.php, so a reviewer sees exactly what will be printed.
+ *
+ * Free-text fields go through rf_text(), which hides the lone "0" the Access
+ * import writes into empty legacy columns. Age, Lab No and Hosp No are shown
+ * exactly as recorded, since 0 could be genuine there.
  */
-$logo = setting('logo_path');
+require_once __DIR__ . '/_report_form.php';
 ?>
-<div class="report__head">
-    <?php if ($logo !== ''): ?><img src="<?= e($logo) ?>" alt=""><?php endif; ?>
-    <div class="report__org"><?= e(setting('hospital_name')) ?></div>
-    <div class="report__dept"><?= e(setting('department_name')) ?></div>
-    <div class="report__title">Cytology Report</div>
-</div>
+<div class="rf">
+    <?= report_letterhead('Cytology Report') ?>
 
-<div class="report__grid">
-    <div class="report__cell"><span class="report__key">Lab No</span><span class="report__val"><?= e($r['lab_no']) ?></span></div>
-    <div class="report__cell"><span class="report__key">Hosp No</span><span class="report__val"><?= e($r['hosp_no']) ?></span></div>
-    <div class="report__cell"><span class="report__key">Patient</span><span class="report__val"><?= e(trim($r['surname'] . ' ' . $r['other_names'])) ?></span></div>
-    <div class="report__cell"><span class="report__key">Age / Sex</span><span class="report__val"><?= e(trim(($r['age'] ?? '') . ' / ' . ($r['sex'] ?? ''), ' /')) ?></span></div>
+    <div class="rf__frame">
+        <div class="rf__row rf__row--6">
+            <?= rf_field('Hosp No', $r['hosp_no'], 'right') ?>
+            <?= rf_field('Surname', $r['surname'], 'right') ?>
+            <?= rf_field('Other Names', rf_text($r['other_names']), 'right') ?>
+            <?= rf_field('Age (Years)', $r['age'], 'right') ?>
+            <?= rf_field('Sex', rf_text($r['sex']), 'right') ?>
+            <?= rf_field('Lab No', $r['lab_no']) ?>
+        </div>
 
-    <div class="report__cell"><span class="report__key">Requesting Hospital</span><span class="report__val"><?= e($r['requesting_hospital']) ?></span></div>
-    <div class="report__cell"><span class="report__key">Ward / Clinic</span><span class="report__val"><?= e($r['ward_clinic']) ?></span></div>
-    <div class="report__cell"><span class="report__key">Date of Collection</span><span class="report__val"><?= e($r['date_of_collection']) ?></span></div>
-    <div class="report__cell"><span class="report__key">Ethnic Group</span><span class="report__val"><?= e($r['ethnic_group']) ?></span></div>
+        <div class="rf__row rf__row--5">
+            <?= rf_field('Requesting Hospital', rf_text($r['requesting_hospital'])) ?>
+            <?= rf_field('Ward/Clinic', rf_text($r['ward_clinic'])) ?>
+            <?= rf_field('Ethnic Group', rf_text($r['ethnic_group'])) ?>
+            <?= rf_field('Date of Collection', rf_date($r['date_of_collection']), 'right') ?>
+            <?= rf_field('Signout Date', rf_date($r['signout_date']), 'right') ?>
+        </div>
 
-    <div class="report__cell"><span class="report__key">LMP</span><span class="report__val"><?= e($r['lmp']) ?></span></div>
-    <div class="report__cell"><span class="report__key">Drug History</span><span class="report__val"><?= e($r['drug_history']) ?></span></div>
-    <div class="report__cell"><span class="report__key">Radiation</span><span class="report__val"><?= e($r['radiation']) ?></span></div>
-    <div class="report__cell"><span class="report__key">Previous Lab No</span><span class="report__val"><?= e($r['previous_lab_no']) ?></span></div>
+        <div class="rf__row rf__row--4">
+            <?= rf_field('LMP', rf_date($r['lmp'])) ?>
+            <?= rf_field("Patient's Tel No", rf_text($r['patients_tel_no'])) ?>
+            <?= rf_field('Previous Lab No', rf_text($r['previous_lab_no'])) ?>
+            <?= rf_field('Clinician', rf_text($r['clinician']), 'right') ?>
+        </div>
 
-    <div class="report__cell"><span class="report__key">Nature of Specimen</span><span class="report__val"><?= e($r['nature_of_specimen']) ?></span></div>
-    <div class="report__cell"><span class="report__key">Clinician</span><span class="report__val"><?= e($r['clinician']) ?></span></div>
-    <div class="report__cell"><span class="report__key">Clinician's Tel</span><span class="report__val"><?= e($r['clinician_tel_no']) ?></span></div>
-    <div class="report__cell"><span class="report__key">Patient's Tel</span><span class="report__val"><?= e($r['patients_tel_no']) ?></span></div>
-</div>
+        <div class="rf__row rf__row--3">
+            <?= rf_field('Drug History', rf_text($r['drug_history'])) ?>
+            <?= rf_field('Radiation', rf_text($r['radiation'])) ?>
+            <?= rf_field("Clinician's Tel No", rf_text($r['clinician_tel_no']), 'right') ?>
+        </div>
 
-<?php
-$sections = [
-    'Clinical History' => $r['clinical_history'],
-    'Microscopy'       => $r['microscopy'],
-    'Diagnosis'        => $r['diagnosis'],
-    'Recommendation'   => $r['recommendation'],
-];
-foreach ($sections as $heading => $text):
-?>
-<div class="report__section">
-    <h3><?= e($heading) ?></h3>
-    <div class="report__prose"><?= e($text) ?></div>
-</div>
-<?php endforeach; ?>
+        <?= rf_section('Clinical History', rf_text($r['clinical_history'])) ?>
+        <?= rf_section('Nature of Specimen', rf_text($r['nature_of_specimen'])) ?>
+        <?= rf_section('Microscopy', rf_text($r['microscopy'])) ?>
+        <?= rf_section('Diagnosis', rf_text($r['diagnosis'])) ?>
+        <?= rf_section('Recommendation', rf_text($r['recommendation']), 'tall') ?>
 
-<div class="report__sign">
-    <div><span class="report__key">Resident Doctor(s)</span><span class="report__val"><?= e($r['resident_doctors']) ?></span></div>
-    <div><span class="report__key">Consultant Pathologist(s)</span><span class="report__val"><?= e($r['consultant_pathologists']) ?></span></div>
-    <div><span class="report__key">Signout Date</span><span class="report__val"><?= e($r['signout_date']) ?></span></div>
-    <div><span class="report__key">Cost</span><span class="report__val"><?= e($r['cost']) ?></span></div>
-    <div><span class="report__key">Status</span><span class="report__val"><?= ucfirst(e($r['status'])) ?></span></div>
+        <div class="rf__row rf__row--sign">
+            <?= rf_field('Resident Doctor(s)', rf_text($r['resident_doctors'])) ?>
+            <?= rf_field('Consultant Pathologist(s)', rf_text($r['consultant_pathologists']), 'right') ?>
+        </div>
+
+        <?= rf_printed_on() ?>
+    </div>
+
+    <?= rf_extras([
+        'Cost' => rf_recorded($r['cost']) ? number_format((float)$r['cost'], 2) : '',
+    ]) ?>
 </div>

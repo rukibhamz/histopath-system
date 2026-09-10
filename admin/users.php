@@ -204,7 +204,7 @@ render_header([
                     <label class="label" for="role">Role</label>
                     <select class="select" id="role" name="role">
                         <option value="staff">Staff &mdash; enters reports</option>
-                        <option value="reviewer">Reviewer &mdash; approves reports</option>
+                        <option value="reviewer">Reviewer &mdash; reviews, edits and approves reports</option>
                         <option value="admin">Admin &mdash; full access</option>
                     </select>
                 </div>

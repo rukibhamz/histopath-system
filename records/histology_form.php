@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/_form_support.php';
 require_login();
-require_role(['staff', 'admin']);
+require_role(['staff', 'admin', 'reviewer']);
 
 const HISTOLOGY_FIELDS = [
     'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'hospital_no',
@@ -18,6 +18,11 @@ $table = 'histology_reports';
 $id = (int)($_GET['id'] ?? $_POST['record_id'] ?? 0);
 $editing = $id > 0;
 $errors = [];
+
+if (!$editing && current_role() === 'reviewer') {
+    http_response_code(403);
+    die("Reviewers can edit existing reports but cannot create new ones.");
+}
 
 $record = $editing ? load_editable_report($pdo, $table, $id) : null;
 

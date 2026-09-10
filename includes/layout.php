@@ -66,6 +66,7 @@ function nav_items(string $role): array {
         ],
         'admin' => [
             ['key' => 'dashboard', 'label' => 'Dashboard', 'url' => 'dashboard.php'],
+            ['key' => 'pending',   'label' => 'Awaiting Review', 'url' => 'records/list.php?status=pending'],
             $records,
             ['key' => 'users',     'label' => 'Users',    'url' => 'admin/users.php'],
             ['key' => 'logs',      'label' => 'Activity', 'url' => 'admin/logs.php'],
@@ -105,7 +106,7 @@ function render_header(array $options = []): void {
     $title   = $options['title'] ?? 'Histopathology Records';
     $bare    = !empty($options['bare']);
     $narrow  = !empty($options['narrow']);
-    $logo    = setting('logo_path');
+    $logo    = logo_url();
     $org     = setting('hospital_name');
     $full_name = $_SESSION['full_name'] ?? '';
     ?>
@@ -115,7 +116,7 @@ function render_header(array $options = []): void {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= e($title) ?> &middot; <?= e($org) ?></title>
-<link rel="stylesheet" href="<?= app_url('assets/app.css') ?>">
+<link rel="stylesheet" href="<?= e(asset_url('assets/app.css')) ?>">
 <?= theme_css() ?>
 <?= $options['head'] ?? '' ?>
 </head>
@@ -143,7 +144,7 @@ function render_header(array $options = []): void {
 
     <aside class="sidebar">
         <div class="sidebar__head">
-            <span class="sidebar__logo">
+            <span class="sidebar__logo<?= $logo !== '' ? ' sidebar__logo--image' : '' ?>">
                 <?php if ($logo !== ''): ?>
                     <img src="<?= e($logo) ?>" alt="">
                 <?php else: ?>

@@ -40,7 +40,7 @@ $params = [];
  * hospital-number column, which histology and cytology spell differently.
  * Columns are qualified with the "r." alias because the query joins users.
  */
-$build_where = function (string $suffix, string $hosp_col) use ($role, $status_filter, $search, $from, $to, $mine_only, &$params): string {
+$build_where = function (string $suffix, string $hosp_col, array $extra_cols = []) use ($role, $status_filter, $search, $from, $to, $mine_only, &$params): string {
     $conditions = [];
 
     if ($status_filter !== '') {
@@ -60,7 +60,14 @@ $build_where = function (string $suffix, string $hosp_col) use ($role, $status_f
 
     if ($search !== '') {
         // One placeholder per column, since a name can't be reused in the statement.
-        $cols = ['lab_no' => 'lab', 'surname' => 'sur', 'other_names' => 'oth', $hosp_col => 'hosp'];
+        $cols = [
+            'lab_no' => 'lab',
+            'surname' => 'sur',
+            'other_names' => 'oth',
+            $hosp_col => 'hosp',
+            'nature_of_specimen' => 'nat',
+            'diagnosis' => 'dx',
+        ] + $extra_cols;
         $like = sql_ilike();
         $clauses = [];
         foreach ($cols as $column => $key) {
@@ -68,6 +75,9 @@ $build_where = function (string $suffix, string $hosp_col) use ($role, $status_f
             $clauses[] = "r.$column $like :$placeholder";
             $params[$placeholder] = '%' . $search . '%';
         }
+        // id is an integer; compare it as text so a typed number still matches.
+        $clauses[] = "CAST(r.id AS TEXT) $like :q_id{$suffix}";
+        $params["q_id{$suffix}"] = '%' . $search . '%';
         $conditions[] = '(' . implode(' OR ', $clauses) . ')';
     }
 
@@ -95,7 +105,7 @@ if ($type_filter !== 'cytology') {
            r.status AS status, r.submitted_by AS submitted_by, u.full_name AS submitted_by_name,
            'histology' AS report_type, r.created_at AS created_at
     FROM histology_reports r
-    LEFT JOIN users u ON u.id = r.submitted_by " . $build_where('_h', 'hospital_no');
+    LEFT JOIN users u ON u.id = r.submitted_by " . $build_where('_h', 'hospital_no', ['provisional_diagnosis' => 'pdx']);
 }
 
 if ($type_filter !== 'histology') {
@@ -153,8 +163,8 @@ render_header([
     'title' => $mine_only ? 'My Submissions' : 'Records',
     'lead'  => $role === 'staff' && !$mine_only
         ? 'Search every approved report, including imported historical records. Reports still awaiting review are visible only to whoever submitted them.'
-        : 'Search by lab number, hospital number or patient name.',
-    'nav' => 'records',
+        : 'Search by lab number, hospital number, patient name, diagnosis, or nature of specimen.',
+    'nav' => $status_filter === 'pending' && in_array($role, ['reviewer', 'admin'], true) ? 'pending' : 'records',
     'actions' => $actions,
 ]);
 ?>
@@ -183,7 +193,7 @@ render_header([
             <div class="field field--grow">
                 <label class="label" for="q">Search</label>
                 <input class="input" id="q" name="q" value="<?= e($search) ?>"
-                       placeholder="Lab number, hospital number, or patient name">
+                       placeholder="Lab number, name, diagnosis, specimen, or record ID">
             </div>
             <div class="field">
                 <label class="label" for="type">Type</label>
@@ -219,7 +229,7 @@ render_header([
         <div class="empty__title"><?= $searching ? 'No matching records' : 'No records to show' ?></div>
         <div class="empty__hint">
             <?= $searching
-                ? 'Try part of a lab number or surname, or widen the date range.'
+                ? 'Try part of a lab number, surname, diagnosis, or specimen, or widen the date range.'
                 : 'Reports will appear here as they are entered.' ?>
         </div>
     </div>
@@ -254,9 +264,7 @@ render_header([
                                href="<?= app_url('records/review.php') ?>?id=<?= (int)$r['id'] ?>&amp;type=<?= e($r['report_type']) ?>">Review</a>
                         <?php endif; ?>
                         <?php
-                        $can_edit = ($role === 'admin')
-                                 || ($role === 'staff' && in_array($r['status'], ['pending', 'rejected'], true)
-                                     && (int)$r['submitted_by'] === current_user_id());
+                        $can_edit = can_edit_report($r);
                         ?>
                         <?php if ($can_edit): ?>
                             <a class="btn btn--sm"
@@ -273,7 +281,7 @@ render_header([
     <div class="tablefoot">
         <?php if ($truncated): ?>
             Showing the first <?= RECORD_LIST_LIMIT ?> matches &mdash; there are more.
-            Narrow the search with a lab number, hospital number, or a collection date range.
+            Narrow the search with a lab number, diagnosis, specimen, or a collection date range.
         <?php else: ?>
             <?= count($records) ?> record<?= count($records) === 1 ? '' : 's' ?>.
         <?php endif; ?>
