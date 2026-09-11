@@ -694,8 +694,8 @@ input[type=color].input { padding: 3px; height: 40px; width: 64px; cursor: point
     --rf-line: #d4d4d4;
     --rf-frame: #e2e2e2;
     --rf-label: #767676;
-    --rf-label-font: "Calibri Light", Calibri, "Segoe UI", Arial, sans-serif;
-    --rf-serif: "Times New Roman", Times, Georgia, serif;
+    --rf-font: Arial, "Liberation Sans", "Helvetica Neue", Helvetica, sans-serif;
+    font-family: var(--rf-font);
 }
 
 /* Letterhead */
@@ -724,9 +724,9 @@ input[type=color].input { padding: 3px; height: 40px; width: 64px; cursor: point
 .rf__frame { border: 3px solid var(--rf-frame); padding: 12px 14px 14px; }
 
 .rf__row { display: grid; gap: 6px 8px; margin-bottom: 8px; }
-.rf__row--6 { grid-template-columns: 1.1fr 2fr 2fr 1.05fr 1.05fr 1.6fr; }
-.rf__row--5 { grid-template-columns: 2.5fr 1.35fr 1.7fr 1.8fr 1.6fr; }
-.rf__row--4 { grid-template-columns: 2fr 2.7fr 1.4fr 2.9fr; }
+.rf__row--6 { grid-template-columns: 1.25fr 1.9fr 1.9fr 1.25fr 0.95fr 1.55fr; }
+.rf__row--5 { grid-template-columns: 2.05fr 1.3fr 1.85fr 2.05fr 1.45fr; }
+.rf__row--4 { grid-template-columns: 1.95fr 2.25fr 1.85fr 2.75fr; }
 .rf__row--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .rf__row--sign { grid-template-columns: 1.35fr 1fr; margin: 22px 0 0; }
 
@@ -735,10 +735,10 @@ input[type=color].input { padding: 3px; height: 40px; width: 64px; cursor: point
 .rf__label {
     border: 1px solid var(--rf-line);
     padding: 1px 6px;
-    font-family: var(--rf-label-font);
-    font-weight: 300;
-    font-size: 0.8rem;
-    line-height: 1.45;
+    font-family: var(--rf-font);
+    font-weight: 400;
+    font-size: 0.72rem;
+    line-height: 1.5;
     color: var(--rf-label);
     text-transform: uppercase;
     letter-spacing: 0.01em;
@@ -753,7 +753,7 @@ input[type=color].input { padding: 3px; height: 40px; width: 64px; cursor: point
     padding: 3px 6px;
     min-height: 1.95em;
     font-weight: 700;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     line-height: 1.35;
     overflow-wrap: break-word;
 }
@@ -766,10 +766,10 @@ input[type=color].input { padding: 3px; height: 40px; width: 64px; cursor: point
     margin-top: 2px;
     padding: 4px 7px;
     min-height: 1.95em;
-    font-family: var(--rf-serif);
+    font-family: var(--rf-font);
     font-weight: 700;
-    font-size: 1.02rem;
-    line-height: 1.38;
+    font-size: 0.92rem;
+    line-height: 1.4;
     white-space: pre-wrap;
     word-break: break-word;
 }
@@ -865,15 +865,15 @@ input[type=color].input { padding: 3px; height: 40px; width: 64px; cursor: point
     .rf, .rf * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rf__head { grid-template-columns: 30mm 1fr 30mm; gap: 3mm; margin-bottom: 3mm; }
     .rf__logo img { max-width: 30mm; max-height: 29mm; }
-    .rf__org, .rf__dept, .rf__doc { font-size: 17pt; line-height: 1.15; }
-    .rf__contact { font-size: 10pt; margin-top: 1mm; }
+    .rf__org, .rf__dept, .rf__doc { font-size: 16pt; line-height: 1.15; }
+    .rf__contact { font-size: 9.5pt; margin-top: 1mm; }
     .rf__frame { border-width: 2px; padding: 3mm 3.5mm 3.5mm; }
     .rf__row { gap: 1.5mm 2mm; margin-bottom: 2mm; }
     .rf__row--sign { margin-top: 4mm; }
-    .rf__label { font-size: 8.5pt; padding: 0 1.5mm; }
-    .rf__value { font-size: 10.5pt; padding: 0.6mm 1.6mm; min-height: 6.2mm; margin-top: 0.6mm; }
+    .rf__label { font-size: 7.5pt; padding: 0 1.5mm; }
+    .rf__value { font-size: 10pt; padding: 0.6mm 1.6mm; min-height: 6mm; margin-top: 0.6mm; }
     .rf__block { margin-top: 1.8mm; break-inside: avoid; page-break-inside: avoid; }
-    .rf__prose { font-size: 11pt; padding: 1mm 1.8mm; min-height: 6.2mm; margin-top: 0.6mm; }
+    .rf__prose { font-size: 10pt; line-height: 1.35; padding: 1mm 1.8mm; min-height: 6mm; margin-top: 0.6mm; }
     .rf__block--tall .rf__prose { min-height: 9mm; }
     .rf__row { break-inside: avoid; page-break-inside: avoid; }
     .rf__printed { font-size: 9.5pt; margin-top: 3mm; }
