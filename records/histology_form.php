@@ -5,7 +5,7 @@ require_login();
 require_role(['staff', 'admin', 'reviewer']);
 
 const HISTOLOGY_FIELDS = [
-    'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'hospital_no',
+    'lab_no', 'lab_year', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'hospital_no',
     'requesting_hospital', 'ward_clinic', 'date_of_collection', 'clinical_history',
     'nature_of_specimen', 'special_requests', 'provisional_diagnosis', 'previous_lab_no',
     'clinician', 'specimen_status', 'gross', 'microscopy', 'further_tests', 'bone_marrow',
@@ -30,10 +30,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
 
     $data = collect_post_fields(HISTOLOGY_FIELDS);
+    $data['lab_year'] = resolve_lab_year($data['date_of_collection'] ?? null, $data['lab_year'] ?? null);
     $errors = validate_report($data, HISTOLOGY_DATE_FIELDS);
 
-    if (!$errors && lab_no_taken($pdo, $table, $data['lab_no'], $id)) {
-        $errors[] = "Lab No '{$data['lab_no']}' is already used by another histology report.";
+    if (!$errors && lab_no_taken($pdo, $table, $data['lab_no'], (int)$data['lab_year'], $id)) {
+        $errors[] = "Lab No '{$data['lab_no']}' is already used in {$data['lab_year']}.";
     }
 
     if (!$errors) {
@@ -55,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // What to show in the inputs: submitted values on a failed save, otherwise the
 // stored record when editing, otherwise blanks.
-$form = ($_SERVER['REQUEST_METHOD'] === 'POST') ? $_POST : ($record ?? []);
+$form = ($_SERVER['REQUEST_METHOD'] === 'POST') ? $_POST : ($record ?? ['lab_year' => date('Y')]);
 
 /** Current value of a form field, escaped for output. */
 function fv(string $field): string {
@@ -67,7 +68,7 @@ render_header([
     'title'   => $editing ? 'Edit Histology Report' : 'New Histology Report',
     'heading' => $editing ? 'Edit histology report' : 'New histology report',
     'lead'    => $editing
-        ? 'Lab number ' . e((string)($record['lab_no'] ?? '')) . ' &middot; ' . status_badge($record['status'])
+        ? 'Lab number ' . e(format_lab_no($record['lab_no'] ?? '', $record['lab_year'] ?? null)) . ' &middot; ' . status_badge($record['status'])
         : 'Fields marked with an asterisk are required.',
     'nav'     => 'new-histology',
     'back'    => ['label' => 'Back to records', 'url' => 'records/list.php'],
@@ -100,6 +101,12 @@ render_header([
                 <div class="field">
                     <label class="label" for="lab_no">Lab No <span class="req">*</span></label>
                     <input class="input" id="lab_no" name="lab_no" required value="<?= fv('lab_no') ?>">
+                </div>
+                <div class="field">
+                    <label class="label" for="lab_year">Year <span class="req">*</span></label>
+                    <input class="input" type="number" id="lab_year" name="lab_year" required
+                           min="1990" max="2100" value="<?= fv('lab_year') ?>">
+                    <div class="hint">Lab numbers restart each year. Changing the collection date updates this.</div>
                 </div>
                 <div class="field">
                     <label class="label" for="surname">Surname <span class="req">*</span></label>
@@ -255,5 +262,14 @@ render_header([
         <a class="btn btn--ghost" href="<?= app_url('records/list.php') ?>">Cancel</a>
     </div>
 </form>
-
+<script>
+(function () {
+    var year = document.getElementById('lab_year');
+    var collected = document.getElementById('date_of_collection');
+    if (!year || !collected) return;
+    collected.addEventListener('change', function () {
+        if (this.value && /^\d{4}-/.test(this.value)) year.value = this.value.slice(0, 4);
+    });
+})();
+</script>
 <?php render_footer(); ?>

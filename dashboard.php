@@ -36,10 +36,10 @@ if ($role === 'staff') {
 
 // The most recent records this person is allowed to see.
 $recent = $pdo->prepare("
-    SELECT lab_no, surname, other_names, status, created_at, 'histology' AS report_type, id
+    SELECT lab_no, lab_year, surname, other_names, status, created_at, 'histology' AS report_type, id
     FROM histology_reports " . ($role === 'staff' ? 'WHERE submitted_by = :uid_h' : '') . "
     UNION ALL
-    SELECT lab_no, surname, other_names, status, created_at, 'cytology' AS report_type, id
+    SELECT lab_no, lab_year, surname, other_names, status, created_at, 'cytology' AS report_type, id
     FROM cytology_reports " . ($role === 'staff' ? 'WHERE submitted_by = :uid_c' : '') . "
     ORDER BY created_at DESC
     LIMIT 8
@@ -140,7 +140,7 @@ render_header([
             <tbody>
             <?php foreach ($recent_records as $r): ?>
                 <tr>
-                    <td class="mono nowrap"><?= e($r['lab_no']) ?></td>
+                    <td class="mono nowrap"><?= e(format_lab_no($r['lab_no'], $r['lab_year'] ?? null)) ?></td>
                     <td><?= e(trim($r['surname'] . ' ' . $r['other_names'])) ?></td>
                     <td class="muted"><?= ucfirst(e($r['report_type'])) ?></td>
                     <td><?= status_badge($r['status']) ?></td>

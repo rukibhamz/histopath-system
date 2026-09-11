@@ -45,6 +45,7 @@ try {
             PDO::ATTR_EMULATE_PREPARES   => false,
         ]);
     }
+    db_ensure_lab_year($pdo);
 } catch (PDOException $e) {
     // Never show connection details to the browser - they name the server and user.
     error_log('Database connection failed: ' . $e->getMessage());

@@ -75,9 +75,11 @@ $build_where = function (string $suffix, string $hosp_col, array $extra_cols = [
             $clauses[] = "r.$column $like :$placeholder";
             $params[$placeholder] = '%' . $search . '%';
         }
-        // id is an integer; compare it as text so a typed number still matches.
+        // Integers compared as text so a typed number still matches.
         $clauses[] = "CAST(r.id AS TEXT) $like :q_id{$suffix}";
         $params["q_id{$suffix}"] = '%' . $search . '%';
+        $clauses[] = "CAST(r.lab_year AS TEXT) $like :q_yr{$suffix}";
+        $params["q_yr{$suffix}"] = '%' . $search . '%';
         $conditions[] = '(' . implode(' OR ', $clauses) . ')';
     }
 
@@ -100,7 +102,7 @@ $parts = [];
 
 if ($type_filter !== 'cytology') {
     $parts[] = "
-    SELECT r.id AS id, r.lab_no AS lab_no, r.surname AS surname, r.other_names AS other_names,
+    SELECT r.id AS id, r.lab_no AS lab_no, r.lab_year AS lab_year, r.surname AS surname, r.other_names AS other_names,
            r.hospital_no AS patient_hosp_no, r.date_of_collection AS date_of_collection,
            r.status AS status, r.submitted_by AS submitted_by, u.full_name AS submitted_by_name,
            'histology' AS report_type, r.created_at AS created_at
@@ -110,7 +112,7 @@ if ($type_filter !== 'cytology') {
 
 if ($type_filter !== 'histology') {
     $parts[] = "
-    SELECT r.id AS id, r.lab_no AS lab_no, r.surname AS surname, r.other_names AS other_names,
+    SELECT r.id AS id, r.lab_no AS lab_no, r.lab_year AS lab_year, r.surname AS surname, r.other_names AS other_names,
            r.hosp_no AS patient_hosp_no, r.date_of_collection AS date_of_collection,
            r.status AS status, r.submitted_by AS submitted_by, u.full_name AS submitted_by_name,
            'cytology' AS report_type, r.created_at AS created_at
@@ -245,7 +247,7 @@ render_header([
         <tbody>
         <?php foreach ($records as $r): ?>
             <tr>
-                <td class="mono nowrap"><?= e($r['lab_no']) ?></td>
+                <td class="mono nowrap"><?= e(format_lab_no($r['lab_no'], $r['lab_year'] ?? null)) ?></td>
                 <td><?= e(trim($r['surname'] . ' ' . $r['other_names'])) ?></td>
                 <td class="mono muted"><?= e($r['patient_hosp_no']) ?></td>
                 <td class="muted"><?= ucfirst(e($r['report_type'])) ?></td>

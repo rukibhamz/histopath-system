@@ -29,6 +29,11 @@ function validate_report(array $data, array $date_fields): array {
         $errors[] = "Lab No must be 20 characters or fewer.";
     }
 
+    $year = $data['lab_year'] ?? null;
+    if ($year === null || !ctype_digit((string)$year) || (int)$year < 1990 || (int)$year > 2100) {
+        $errors[] = "Lab year is required and must be a year between 1990 and 2100.";
+    }
+
     if (($data['sex'] ?? null) !== null && !in_array($data['sex'], ['MALE', 'FEMALE'], true)) {
         $errors[] = "Sex must be Male or Female.";
     }
@@ -56,10 +61,32 @@ function validate_report(array $data, array $date_fields): array {
     return $errors;
 }
 
-/** True if another record in $table already uses this Lab No. */
-function lab_no_taken(PDO $pdo, string $table, string $lab_no, int $exclude_id = 0): bool {
-    $stmt = $pdo->prepare("SELECT 1 FROM $table WHERE lab_no = :lab_no AND id <> :exclude_id LIMIT 1");
-    $stmt->execute(['lab_no' => $lab_no, 'exclude_id' => $exclude_id]);
+/**
+ * Year that pairs with a lab number. Prefer an explicit year, then the
+ * collection date, then the current calendar year.
+ */
+function resolve_lab_year(?string $collection_date, mixed $explicit = null): int {
+    if ($explicit !== null && $explicit !== '' && ctype_digit((string)$explicit)) {
+        $year = (int)$explicit;
+        if ($year >= 1990 && $year <= 2100) return $year;
+    }
+    if ($collection_date) {
+        $parsed = DateTime::createFromFormat('Y-m-d', $collection_date);
+        if ($parsed && $parsed->format('Y-m-d') === $collection_date) {
+            return (int)$parsed->format('Y');
+        }
+    }
+    return (int)date('Y');
+}
+
+/** True if another record already uses this Lab No in the same year. */
+function lab_no_taken(PDO $pdo, string $table, string $lab_no, int $lab_year, int $exclude_id = 0): bool {
+    $stmt = $pdo->prepare("
+        SELECT 1 FROM $table
+        WHERE lab_no = :lab_no AND lab_year = :lab_year AND id <> :exclude_id
+        LIMIT 1
+    ");
+    $stmt->execute(['lab_no' => $lab_no, 'lab_year' => $lab_year, 'exclude_id' => $exclude_id]);
     return (bool)$stmt->fetchColumn();
 }
 

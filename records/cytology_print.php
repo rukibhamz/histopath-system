@@ -35,9 +35,9 @@ if (in_array(current_role(), ['reviewer', 'admin'], true)) {
 }
 
 render_header([
-    'title'   => 'Cytology Report ' . $r['lab_no'],
+    'title'   => 'Cytology Report ' . format_lab_no($r['lab_no'], $r['lab_year'] ?? null),
     'heading' => 'Cytology report',
-    'lead'    => 'Lab number ' . e($r['lab_no']) . ' &middot; ' . status_badge($r['status']),
+    'lead'    => 'Lab number ' . e(format_lab_no($r['lab_no'], $r['lab_year'] ?? null)) . ' &middot; ' . status_badge($r['status']),
     'nav'     => 'records',
     'narrow'  => false,
     'back'    => ['label' => 'Back to records', 'url' => 'records/list.php'],

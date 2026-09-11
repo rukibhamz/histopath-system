@@ -35,7 +35,8 @@ CREATE TABLE system_settings (
 
 CREATE TABLE histology_reports (
     id                      SERIAL PRIMARY KEY,
-    lab_no                  VARCHAR(20) UNIQUE NOT NULL,
+    lab_no                  VARCHAR(20) NOT NULL,
+    lab_year                INTEGER NOT NULL,
     surname                 VARCHAR(100) NOT NULL,
     other_names             VARCHAR(150),
     age                     INTEGER,
@@ -70,12 +71,14 @@ CREATE TABLE histology_reports (
     reviewer_comments       TEXT,
     reviewed_at             TIMESTAMP,
     created_at              TIMESTAMP DEFAULT NOW(),
-    updated_at              TIMESTAMP DEFAULT NOW()
+    updated_at              TIMESTAMP DEFAULT NOW(),
+    UNIQUE (lab_no, lab_year)
 );
 
 CREATE TABLE cytology_reports (
     id                      SERIAL PRIMARY KEY,
-    lab_no                  VARCHAR(20) UNIQUE NOT NULL,
+    lab_no                  VARCHAR(20) NOT NULL,
+    lab_year                INTEGER NOT NULL,
     surname                 VARCHAR(100) NOT NULL,
     other_names             VARCHAR(150),
     age                     INTEGER,
@@ -107,7 +110,8 @@ CREATE TABLE cytology_reports (
     reviewer_comments       TEXT,
     reviewed_at             TIMESTAMP,
     created_at              TIMESTAMP DEFAULT NOW(),
-    updated_at              TIMESTAMP DEFAULT NOW()
+    updated_at              TIMESTAMP DEFAULT NOW(),
+    UNIQUE (lab_no, lab_year)
 );
 
 CREATE TABLE login_attempts (

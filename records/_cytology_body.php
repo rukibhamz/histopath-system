@@ -20,7 +20,7 @@ require_once __DIR__ . '/_report_form.php';
             <?= rf_field('Other Names', rf_text($r['other_names']), 'right') ?>
             <?= rf_field('Age (Years)', $r['age'], 'right') ?>
             <?= rf_field('Sex', rf_text($r['sex']), 'right') ?>
-            <?= rf_field('Lab No', $r['lab_no']) ?>
+            <?= rf_field('Lab No', format_lab_no($r['lab_no'], $r['lab_year'] ?? null)) ?>
         </div>
 
         <div class="rf__row rf__row--5">

@@ -43,7 +43,8 @@ CREATE TABLE system_settings (
 
 CREATE TABLE histology_reports (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-    lab_no                  TEXT UNIQUE NOT NULL,
+    lab_no                  TEXT NOT NULL,
+    lab_year                INTEGER NOT NULL,
     surname                 TEXT NOT NULL,
     other_names             TEXT,
     age                     INTEGER,
@@ -78,12 +79,14 @@ CREATE TABLE histology_reports (
     reviewer_comments       TEXT,
     reviewed_at             TEXT,
     created_at              TEXT DEFAULT (datetime('now','localtime')),
-    updated_at              TEXT DEFAULT (datetime('now','localtime'))
+    updated_at              TEXT DEFAULT (datetime('now','localtime')),
+    UNIQUE (lab_no, lab_year)
 );
 
 CREATE TABLE cytology_reports (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-    lab_no                  TEXT UNIQUE NOT NULL,
+    lab_no                  TEXT NOT NULL,
+    lab_year                INTEGER NOT NULL,
     surname                 TEXT NOT NULL,
     other_names             TEXT,
     age                     INTEGER,
@@ -115,7 +118,8 @@ CREATE TABLE cytology_reports (
     reviewer_comments       TEXT,
     reviewed_at             TEXT,
     created_at              TEXT DEFAULT (datetime('now','localtime')),
-    updated_at              TEXT DEFAULT (datetime('now','localtime'))
+    updated_at              TEXT DEFAULT (datetime('now','localtime')),
+    UNIQUE (lab_no, lab_year)
 );
 
 CREATE TABLE login_attempts (

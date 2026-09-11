@@ -58,4 +58,27 @@ CREATE TRIGGER trg_cytology_updated_at
 -- so user_id has to accept NULL.
 ALTER TABLE access_logs ALTER COLUMN user_id DROP NOT NULL;
 
+-- Lab numbers rotate each year, so uniqueness is (lab_no, lab_year).
+ALTER TABLE histology_reports ADD COLUMN IF NOT EXISTS lab_year INTEGER;
+UPDATE histology_reports SET lab_year = COALESCE(
+    EXTRACT(YEAR FROM date_of_collection)::integer,
+    EXTRACT(YEAR FROM created_at)::integer,
+    EXTRACT(YEAR FROM CURRENT_DATE)::integer
+) WHERE lab_year IS NULL;
+ALTER TABLE histology_reports ALTER COLUMN lab_year SET NOT NULL;
+ALTER TABLE histology_reports DROP CONSTRAINT IF EXISTS histology_reports_lab_no_key;
+CREATE UNIQUE INDEX IF NOT EXISTS histology_reports_lab_no_year_key
+    ON histology_reports (lab_no, lab_year);
+
+ALTER TABLE cytology_reports ADD COLUMN IF NOT EXISTS lab_year INTEGER;
+UPDATE cytology_reports SET lab_year = COALESCE(
+    EXTRACT(YEAR FROM date_of_collection)::integer,
+    EXTRACT(YEAR FROM created_at)::integer,
+    EXTRACT(YEAR FROM CURRENT_DATE)::integer
+) WHERE lab_year IS NULL;
+ALTER TABLE cytology_reports ALTER COLUMN lab_year SET NOT NULL;
+ALTER TABLE cytology_reports DROP CONSTRAINT IF EXISTS cytology_reports_lab_no_key;
+CREATE UNIQUE INDEX IF NOT EXISTS cytology_reports_lab_no_year_key
+    ON cytology_reports (lab_no, lab_year);
+
 COMMIT;

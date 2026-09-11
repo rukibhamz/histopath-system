@@ -17,6 +17,13 @@ function e(?string $v): string {
     return htmlspecialchars((string)($v ?? ''), ENT_QUOTES, 'UTF-8');
 }
 
+/** Lab number with its year, e.g. "2070 / 2026". */
+function format_lab_no(?string $lab_no, mixed $year = null): string {
+    $lab = trim((string)$lab_no);
+    $y = (int)$year;
+    return $y > 0 ? $lab . ' / ' . $y : $lab;
+}
+
 /** The signed-in user's role, read directly so the layout needs no auth.php. */
 function layout_role(): string {
     return $_SESSION['role'] ?? '';

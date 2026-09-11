@@ -6,7 +6,7 @@ require_role(['admin']);
 // Columns each table accepts from an import (status and reviewer fields stay system-managed)
 $table_columns = [
     'histology_reports' => [
-        'id', 'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'hospital_no',
+        'id', 'lab_no', 'lab_year', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'hospital_no',
         'requesting_hospital', 'ward_clinic', 'date_of_collection', 'clinical_history',
         'nature_of_specimen', 'special_requests', 'provisional_diagnosis', 'previous_lab_no',
         'clinician', 'specimen_status', 'gross', 'microscopy', 'further_tests', 'bone_marrow',
@@ -14,7 +14,7 @@ $table_columns = [
         'date_out', 'adverse_incidents', 'cost',
     ],
     'cytology_reports' => [
-        'id', 'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'requesting_hospital',
+        'id', 'lab_no', 'lab_year', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'requesting_hospital',
         'hosp_no', 'ward_clinic', 'patients_tel_no', 'date_of_collection', 'clinical_history',
         'lmp', 'drug_history', 'radiation', 'previous_lab_no', 'nature_of_specimen', 'clinician',
         'clinician_tel_no', 'microscopy', 'diagnosis', 'recommendation', 'resident_doctors',
@@ -31,6 +31,7 @@ $date_columns = [
 const MAX_IMPORT_BYTES = 20 * 1024 * 1024;   // 20MB is ample for an Access table export
 
 require_once __DIR__ . '/_import_support.php';
+require_once __DIR__ . '/../records/_form_support.php';
 
 /** Remove a staged upload and forget it. */
 function clear_staged_import(): void {
@@ -125,6 +126,11 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $data[$db_col] = parse_date($value);
                 } elseif ($db_col === 'sex') {
                     $data[$db_col] = parse_sex($value);
+                } elseif ($db_col === 'lab_year') {
+                    $year = parse_number($value);
+                    if ($year !== null && (int)$year >= 1990 && (int)$year <= 2100) {
+                        $data[$db_col] = (int)$year;
+                    }
                 } elseif ($db_col === 'id') {
                     $id = parse_number($value);
                     if ($id !== null && (int)$id > 0) {
@@ -141,6 +147,7 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $skipped++;
                 continue;
             }
+            $data['lab_year'] = resolve_lab_year($data['date_of_collection'] ?? null, $data['lab_year'] ?? null);
             if (empty($data['surname'])) {
                 // surname is NOT NULL - fill rather than lose the row
                 $data['surname'] = 'UNKNOWN';
@@ -156,7 +163,7 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = $pdo->prepare("
                     INSERT INTO $target_table ($cols_sql, submitted_by, status)
                     VALUES ($placeholders, :submitted_by, 'approved')
-                    ON CONFLICT (lab_no) DO NOTHING
+                    ON CONFLICT (lab_no, lab_year) DO NOTHING
                 ");
                 $stmt->execute($data + ['submitted_by' => current_user_id()]);
                 $pdo->exec('RELEASE SAVEPOINT import_row');
@@ -201,7 +208,7 @@ render_header([
     <div class="alert alert--ok">
         Imported <strong><?= (int)$result['inserted'] ?></strong> records.
         Skipped <strong><?= (int)$result['skipped'] ?></strong>
-        (duplicate lab number, missing lab number, or an error).
+        (duplicate lab number in the same year, missing lab number, or an error).
     </div>
 
     <?php if ($result['errors']): ?>
@@ -281,8 +288,8 @@ render_header([
                     <div class="alert alert--info" style="margin-bottom:16px;">
                         Records are imported as <strong>approved</strong>, since they are already
                         finalised historical reports. Every row needs a lab number; rows without one,
-                        or whose lab number is already in the system, are skipped. A row that fails
-                        does not stop the rest of the file.
+                        or whose lab number is already used in the same year, are skipped. A row that
+                        fails does not stop the rest of the file.
                     </div>
                     <div class="form-actions">
                         <button class="btn btn--primary" type="submit">Run import</button>

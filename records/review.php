@@ -65,9 +65,9 @@ log_action($pdo, current_user_id(), 'view_record', $table, $id);
 $own_record = (int)$r['submitted_by'] === current_user_id();
 
 render_header([
-    'title'   => 'Review ' . $r['lab_no'],
+    'title'   => 'Review ' . format_lab_no($r['lab_no'], $r['lab_year'] ?? null),
     'heading' => 'Review ' . ucfirst($type) . ' Report',
-    'lead'    => 'Lab number ' . e($r['lab_no']) . ' &middot; ' . status_badge($r['status']),
+    'lead'    => 'Lab number ' . e(format_lab_no($r['lab_no'], $r['lab_year'] ?? null)) . ' &middot; ' . status_badge($r['status']),
     'nav'     => $r['status'] === 'pending' ? 'pending' : 'records',
     'narrow'  => false,
     'back'    => ['label' => 'Back to records', 'url' => 'records/list.php'],
