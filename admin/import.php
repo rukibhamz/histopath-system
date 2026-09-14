@@ -3,10 +3,12 @@ require_once __DIR__ . '/../includes/auth.php';
 require_login();
 require_role(['admin']);
 
-// Columns each table accepts from an import (status and reviewer fields stay system-managed)
+// Columns each table accepts from an import. Access AutoNumber (`id`) is never
+// imported: yearly dumps reuse the same IDs and would collide. Lab year is set
+// by the admin for the whole file, not taken from a CSV column.
 $table_columns = [
     'histology_reports' => [
-        'id', 'lab_no', 'lab_year', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'hospital_no',
+        'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'hospital_no',
         'requesting_hospital', 'ward_clinic', 'date_of_collection', 'clinical_history',
         'nature_of_specimen', 'special_requests', 'provisional_diagnosis', 'previous_lab_no',
         'clinician', 'specimen_status', 'gross', 'microscopy', 'further_tests', 'bone_marrow',
@@ -14,7 +16,7 @@ $table_columns = [
         'date_out', 'adverse_incidents', 'cost',
     ],
     'cytology_reports' => [
-        'id', 'lab_no', 'lab_year', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'requesting_hospital',
+        'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'requesting_hospital',
         'hosp_no', 'ward_clinic', 'patients_tel_no', 'date_of_collection', 'clinical_history',
         'lmp', 'drug_history', 'radiation', 'previous_lab_no', 'nature_of_specimen', 'clinician',
         'clinician_tel_no', 'microscopy', 'diagnosis', 'recommendation', 'resident_doctors',
@@ -31,7 +33,6 @@ $date_columns = [
 const MAX_IMPORT_BYTES = 20 * 1024 * 1024;   // 20MB is ample for an Access table export
 
 require_once __DIR__ . '/_import_support.php';
-require_once __DIR__ . '/../records/_form_support.php';
 
 /** Remove a staged upload and forget it. */
 function clear_staged_import(): void {
@@ -39,7 +40,8 @@ function clear_staged_import(): void {
         @unlink($_SESSION['import_file']);
     }
     unset($_SESSION['import_file'], $_SESSION['import_table'],
-          $_SESSION['import_headers'], $_SESSION['import_preview']);
+          $_SESSION['import_headers'], $_SESSION['import_preview'],
+          $_SESSION['import_year']);
 }
 
 $step = $_POST['step'] ?? 'upload';
@@ -58,8 +60,11 @@ if ($step === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     clear_staged_import();
 
     $target_table = $_POST['target_table'] ?? '';
+    $import_year_posted = parse_import_year($_POST['import_year'] ?? null);
     if (!isset($table_columns[$target_table])) {
         $upload_error = "Invalid target table.";
+    } elseif ($import_year_posted === null) {
+        $upload_error = "Set the year this file belongs to (1990–2100).";
     } elseif (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
         $upload_error = "Upload failed. The file may be larger than the server's upload limit.";
     } elseif ($_FILES['csv_file']['size'] > MAX_IMPORT_BYTES) {
@@ -85,6 +90,7 @@ if ($step === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['import_table'] = $target_table;
                 $_SESSION['import_headers'] = $headers;
                 $_SESSION['import_preview'] = $preview;
+                $_SESSION['import_year'] = $import_year_posted;
             }
             if ($handle) fclose($handle);
         }
@@ -99,97 +105,86 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $upload_error = "The uploaded file is no longer available. Please upload it again.";
         clear_staged_import();
     } else {
-        $target_table = $_SESSION['import_table'];
-        $columns = $table_columns[$target_table];
-        $dates = $date_columns[$target_table];
-        $mapping = $_POST['map'] ?? [];   // [csv_column_index => db_column_or_""]
+        $import_year = parse_import_year($_POST['import_year'] ?? ($_SESSION['import_year'] ?? null));
+        if ($import_year === null) {
+            $upload_error = "Set the year this file belongs to (1990–2100).";
+        } else {
+            $_SESSION['import_year'] = $import_year;
+            $target_table = $_SESSION['import_table'];
+            $columns = $table_columns[$target_table];
+            $dates = $date_columns[$target_table];
+            $mapping = $_POST['map'] ?? [];   // [csv_column_index => db_column_or_""]
 
-        $handle = fopen($_SESSION['import_file'], 'r');
-        fgetcsv($handle); // skip the header row
+            $handle = fopen($_SESSION['import_file'], 'r');
+            fgetcsv($handle); // skip the header row
 
-        $inserted = 0;
-        $skipped = 0;
-        $errors = [];
-        $row_number = 1;
+            $inserted = 0;
+            $skipped = 0;
+            $errors = [];
+            $row_number = 1;
 
-        $pdo->beginTransaction();
-        while (($row = fgetcsv($handle)) !== false) {
-            $row_number++;
+            $pdo->beginTransaction();
+            while (($row = fgetcsv($handle)) !== false) {
+                $row_number++;
 
-            $data = [];
-            foreach ($mapping as $idx => $db_col) {
-                if ($db_col === '' || !in_array($db_col, $columns, true)) continue;
-                $value = $row[$idx] ?? null;
-                $value = is_string($value) ? trim($value) : $value;
+                $data = [];
+                foreach ($mapping as $idx => $db_col) {
+                    if ($db_col === '' || $db_col === 'id' || $db_col === 'lab_year') continue;
+                    if (!in_array($db_col, $columns, true)) continue;
+                    $value = $row[$idx] ?? null;
+                    $value = is_string($value) ? trim($value) : $value;
 
-                if (in_array($db_col, $dates, true)) {
-                    $data[$db_col] = parse_date($value);
-                } elseif ($db_col === 'sex') {
-                    $data[$db_col] = parse_sex($value);
-                } elseif ($db_col === 'lab_year') {
-                    $year = parse_number($value);
-                    if ($year !== null && (int)$year >= 1990 && (int)$year <= 2100) {
-                        $data[$db_col] = (int)$year;
+                    if (in_array($db_col, $dates, true)) {
+                        $data[$db_col] = parse_date($value);
+                    } elseif ($db_col === 'sex') {
+                        $data[$db_col] = parse_sex($value);
+                    } elseif ($db_col === 'age' || $db_col === 'cost') {
+                        $data[$db_col] = parse_number($value);
+                    } else {
+                        $data[$db_col] = ($value === '' || $value === null) ? null : $value;
                     }
-                } elseif ($db_col === 'id') {
-                    $id = parse_number($value);
-                    if ($id !== null && (int)$id > 0) {
-                        $data[$db_col] = (int)$id;
-                    }
-                } elseif ($db_col === 'age' || $db_col === 'cost') {
-                    $data[$db_col] = parse_number($value);
-                } else {
-                    $data[$db_col] = ($value === '' || $value === null) ? null : $value;
+                }
+
+                if (empty($data['lab_no'])) {
+                    $skipped++;
+                    continue;
+                }
+                $data['lab_year'] = $import_year;
+                if (empty($data['surname'])) {
+                    // surname is NOT NULL - fill rather than lose the row
+                    $data['surname'] = 'UNKNOWN';
+                }
+
+                $cols_sql = implode(', ', array_keys($data));
+                $placeholders = ':' . implode(', :', array_keys($data));
+
+                // A failed statement poisons the whole PostgreSQL transaction, so each
+                // row gets its own savepoint: one bad row can't discard the rest.
+                $pdo->exec('SAVEPOINT import_row');
+                try {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO $target_table ($cols_sql, submitted_by, status)
+                        VALUES ($placeholders, :submitted_by, 'approved')
+                        ON CONFLICT (lab_no, lab_year) DO NOTHING
+                    ");
+                    $stmt->execute($data + ['submitted_by' => current_user_id()]);
+                    $pdo->exec('RELEASE SAVEPOINT import_row');
+                    $stmt->rowCount() > 0 ? $inserted++ : $skipped++;
+                } catch (Throwable $e) {
+                    $pdo->exec('ROLLBACK TO SAVEPOINT import_row');
+                    $errors[] = "Row $row_number (Lab No {$data['lab_no']}): " . $e->getMessage();
+                    $skipped++;
                 }
             }
+            fclose($handle);
+            $pdo->commit();
 
-            if (empty($data['lab_no'])) {
-                $skipped++;
-                continue;
-            }
-            $data['lab_year'] = resolve_lab_year($data['date_of_collection'] ?? null, $data['lab_year'] ?? null);
-            if (empty($data['surname'])) {
-                // surname is NOT NULL - fill rather than lose the row
-                $data['surname'] = 'UNKNOWN';
-            }
+            log_action($pdo, current_user_id(), 'import_records', $target_table, null,
+                "Imported $inserted records for $import_year, skipped $skipped");
 
-            $cols_sql = implode(', ', array_keys($data));
-            $placeholders = ':' . implode(', :', array_keys($data));
-
-            // A failed statement poisons the whole PostgreSQL transaction, so each
-            // row gets its own savepoint: one bad row can't discard the rest.
-            $pdo->exec('SAVEPOINT import_row');
-            try {
-                $stmt = $pdo->prepare("
-                    INSERT INTO $target_table ($cols_sql, submitted_by, status)
-                    VALUES ($placeholders, :submitted_by, 'approved')
-                    ON CONFLICT (lab_no, lab_year) DO NOTHING
-                ");
-                $stmt->execute($data + ['submitted_by' => current_user_id()]);
-                $pdo->exec('RELEASE SAVEPOINT import_row');
-                $stmt->rowCount() > 0 ? $inserted++ : $skipped++;
-            } catch (Throwable $e) {
-                $pdo->exec('ROLLBACK TO SAVEPOINT import_row');
-                $errors[] = "Row $row_number (Lab No {$data['lab_no']}): " . $e->getMessage();
-                $skipped++;
-            }
+            clear_staged_import();
+            $result = ['inserted' => $inserted, 'skipped' => $skipped, 'errors' => $errors, 'year' => $import_year];
         }
-        fclose($handle);
-        $pdo->commit();
-
-        // Explicit IDs from Access do not advance a PostgreSQL SERIAL sequence.
-        if (!db_is_sqlite()) {
-            $pdo->exec(
-                "SELECT setval(pg_get_serial_sequence(" . $pdo->quote($target_table) . ", 'id'), "
-                . "COALESCE((SELECT MAX(id) FROM $target_table), 1))"
-            );
-        }
-
-        log_action($pdo, current_user_id(), 'import_records', $target_table, null,
-            "Imported $inserted records, skipped $skipped");
-
-        clear_staged_import();
-        $result = ['inserted' => $inserted, 'skipped' => $skipped, 'errors' => $errors];
     }
 }
 
@@ -206,9 +201,10 @@ render_header([
 
 <?php if (isset($result)): ?>
     <div class="alert alert--ok">
-        Imported <strong><?= (int)$result['inserted'] ?></strong> records.
+        Imported <strong><?= (int)$result['inserted'] ?></strong> records
+        for <strong><?= (int)($result['year'] ?? 0) ?></strong>.
         Skipped <strong><?= (int)$result['skipped'] ?></strong>
-        (duplicate lab number in the same year, missing lab number, or an error).
+        (duplicate lab number in that year, missing lab number, or an error).
     </div>
 
     <?php if ($result['errors']): ?>
@@ -244,11 +240,25 @@ render_header([
             <p class="hint" style="padding:0 20px;">
                 Each column from your file is matched to a field where the name is recognised.
                 Check the sample values, correct anything wrong, and set columns you don't need
-                to "Ignore".
+                to "Ignore". Access record IDs are ignored automatically so yearly dumps
+                that reuse the same AutoNumbers do not collide.
             </p>
             <form method="POST">
                 <?= csrf_field() ?>
                 <input type="hidden" name="step" value="import">
+
+                <div class="field" style="padding:0 20px 16px;">
+                    <label class="label" for="import_year">Year for this file <span class="req">*</span></label>
+                    <input class="input" type="number" id="import_year" name="import_year" required
+                           min="1990" max="2100"
+                           value="<?= e((string)($_SESSION['import_year'] ?? '')) ?>"
+                           style="max-width:12rem;">
+                    <div class="hint">
+                        Lab numbers stay as they appear in the file. This year is stored separately
+                        so the same lab number can exist in 2023 and 2024. Staff still see the
+                        original lab number.
+                    </div>
+                </div>
 
                 <div class="table-wrap">
                     <table class="table">
@@ -288,8 +298,8 @@ render_header([
                     <div class="alert alert--info" style="margin-bottom:16px;">
                         Records are imported as <strong>approved</strong>, since they are already
                         finalised historical reports. Every row needs a lab number; rows without one,
-                        or whose lab number is already used in the same year, are skipped. A row that
-                        fails does not stop the rest of the file.
+                        or whose lab number is already used in the year chosen above, are skipped.
+                        A row that fails does not stop the rest of the file.
                     </div>
                     <div class="form-actions">
                         <button class="btn btn--primary" type="submit">Run import</button>
@@ -314,10 +324,22 @@ render_header([
                 <div class="field">
                     <label class="label" for="target_table">Report type</label>
                     <select class="select" id="target_table" name="target_table">
-                        <option value="histology_reports">Histology</option>
-                        <option value="cytology_reports">Cytology</option>
+                        <option value="histology_reports" <?= (($_POST['target_table'] ?? '') === 'histology_reports') ? 'selected' : '' ?>>Histology</option>
+                        <option value="cytology_reports" <?= (($_POST['target_table'] ?? '') === 'cytology_reports') ? 'selected' : '' ?>>Cytology</option>
                     </select>
                     <div class="hint">Import histology and cytology separately.</div>
+                </div>
+
+                <div class="field">
+                    <label class="label" for="import_year">Year for this file <span class="req">*</span></label>
+                    <input class="input" type="number" id="import_year" name="import_year" required
+                           min="1990" max="2100"
+                           value="<?= e((string)($_POST['import_year'] ?? '')) ?>"
+                           placeholder="e.g. 2024" style="max-width:12rem;">
+                    <div class="hint">
+                        Set the year this export belongs to. Lab numbers restart each year; this
+                        keeps 2023/196 distinct from 2024/196 without changing the number staff see.
+                    </div>
                 </div>
 
                 <div class="field">
@@ -340,6 +362,8 @@ render_header([
                 In Access, choose <strong>External Data &rarr; Export &rarr; Text File</strong>, tick
                 <em>Include field names on first row</em>, and save as <code>.csv</code>. If the
                 database won't open in Access, <code>mdb-export</code> will read it instead.
+                Import one year at a time and set that year above. Access ID columns are ignored
+                automatically; new records receive their own IDs.
             </p>
         </div>
     </div>

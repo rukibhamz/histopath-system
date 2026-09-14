@@ -14,10 +14,11 @@ function normalize_header(string $h): string {
 /** Try to guess which DB column a CSV header maps to */
 function guess_column(string $header, array $db_columns): ?string {
     $norm = normalize_header($header);
+    // Access AutoNumber must never land in cytology/histology id.
+    if (in_array($norm, ['id', 'record_id', 'report_id'], true)) {
+        return null;
+    }
     $aliases = [
-        'id' => ['id'],
-        'record_id' => ['id'],
-        'report_id' => ['id'],
         'year' => ['lab_year'],
         'lab_year' => ['lab_year'],
         'accession_year' => ['lab_year'],
@@ -77,4 +78,16 @@ function parse_number(?string $value): ?string {
     if ($value === null) return null;
     $clean = preg_replace('/[^0-9.\-]/', '', $value);
     return ($clean === '' || !is_numeric($clean)) ? null : $clean;
+}
+
+/**
+ * Calendar year the admin assigns to a whole import file.
+ * Access AutoNumbers restart each year, so this is what keeps 2023/2070
+ * distinct from 2024/2070 without rewriting the lab number itself.
+ */
+function parse_import_year(mixed $value): ?int {
+    if ($value === null || $value === '') return null;
+    if (!ctype_digit((string)$value)) return null;
+    $year = (int)$value;
+    return ($year >= 1990 && $year <= 2100) ? $year : null;
 }
