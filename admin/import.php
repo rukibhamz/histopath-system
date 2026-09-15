@@ -78,7 +78,7 @@ function render_import_history(array $batches): void {
         </div>
         <?php if (!$batches): ?>
             <div class="card__body">
-                <p class="hint" style="margin:0;">Files you import will be listed here so you can remove a whole batch if it was brought in by mistake.</p>
+                <p class="hint" style="margin:0;">Files you import are listed here so you can remove a whole batch if it was brought in by mistake. Imports from before this list are grouped by type, year and day.</p>
             </div>
         <?php else: ?>
             <div class="table-wrap">

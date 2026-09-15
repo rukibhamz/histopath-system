@@ -334,5 +334,116 @@ function db_ensure_import_batches(PDO $pdo): void {
         $prefix = $table === 'histology_reports' ? 'histology' : 'cytology';
         $pdo->exec("CREATE INDEX IF NOT EXISTS idx_{$prefix}_import_batch ON $table (import_batch_id)");
     }
+
+    db_backfill_legacy_import_batches($pdo);
     $done = true;
+}
+
+/**
+ * Records imported before import_batch_id existed have no history row.
+ * Group them (type + year + day + importer) so they can still be removed
+ * as a batch. Manual reports are left alone: they are pending until a
+ * reviewer sets reviewed_by.
+ */
+function db_backfill_legacy_import_batches(PDO $pdo): void {
+    try {
+        $flag_check = $pdo->query("
+            SELECT setting_value FROM system_settings
+            WHERE setting_key = 'import_history_backfilled'
+        ");
+        $flag = $flag_check ? $flag_check->fetchColumn() : null;
+        if ($flag_check) $flag_check->closeCursor();
+        if ($flag === '1') return;
+    } catch (Throwable $e) {
+        return;
+    }
+
+    $date_sql = db_is_sqlite()
+        ? 'substr(created_at, 1, 10)'
+        : 'CAST(created_at AS DATE)';
+    $now = sql_now();
+
+    $pending = [];
+    foreach (['histology_reports' => 'Histology', 'cytology_reports' => 'Cytology'] as $table => $label) {
+        $stmt = $pdo->query("
+            SELECT lab_year, $date_sql AS imported_on, submitted_by,
+                   COUNT(*) AS n, MIN(created_at) AS first_at
+            FROM $table
+            WHERE import_batch_id IS NULL
+              AND status = 'approved'
+              AND reviewed_by IS NULL
+            GROUP BY lab_year, $date_sql, submitted_by
+        ");
+        $pending[$table] = ['label' => $label, 'groups' => $stmt->fetchAll()];
+        $stmt->closeCursor();
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $insert = $pdo->prepare("
+            INSERT INTO import_batches
+                (filename, target_table, lab_year, imported_by, inserted_count, skipped_count, created_at)
+            VALUES
+                (:filename, :target_table, :lab_year, :imported_by, :inserted, 0, :created_at)
+            RETURNING id
+        ");
+
+        foreach ($pending as $table => $info) {
+            foreach ($info['groups'] as $group) {
+                $year = (int)$group['lab_year'];
+                $on = substr(trim((string)$group['imported_on']), 0, 10);
+                $uid = ($group['submitted_by'] === null || $group['submitted_by'] === '')
+                    ? null
+                    : (int)$group['submitted_by'];
+                $filename = "Before history — {$info['label']} $year";
+                if ($on !== '') {
+                    $filename .= " ($on)";
+                }
+
+                $insert->execute([
+                    'filename'     => $filename,
+                    'target_table' => $table,
+                    'lab_year'     => $year,
+                    'imported_by'  => $uid,
+                    'inserted'     => (int)$group['n'],
+                    'created_at'   => $group['first_at'] ?: null,
+                ]);
+                $batch_id = (int)$insert->fetchColumn();
+                $insert->closeCursor();
+
+                $sql = "UPDATE $table SET import_batch_id = :id
+                        WHERE import_batch_id IS NULL
+                          AND status = 'approved'
+                          AND reviewed_by IS NULL
+                          AND lab_year = :year
+                          AND $date_sql = :imported_on";
+                $params = ['id' => $batch_id, 'year' => $year, 'imported_on' => $on];
+                if ($uid === null) {
+                    $sql .= ' AND submitted_by IS NULL';
+                } else {
+                    $sql .= ' AND submitted_by = :uid';
+                    $params['uid'] = $uid;
+                }
+                $upd = $pdo->prepare($sql);
+                $upd->execute($params);
+                $upd->closeCursor();
+            }
+        }
+
+        $flag_stmt = $pdo->prepare("
+            INSERT INTO system_settings (setting_key, setting_value, updated_at)
+            VALUES ('import_history_backfilled', '1', $now)
+            ON CONFLICT (setting_key)
+            DO UPDATE SET setting_value = '1', updated_at = $now
+        ");
+        $flag_stmt->execute();
+        $flag_stmt->closeCursor();
+
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('import history backfill failed: ' . $e->getMessage());
+    }
 }
