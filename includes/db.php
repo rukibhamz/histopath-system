@@ -53,7 +53,8 @@ function sql_ilike(): string {
 /** Names of the system's tables that already exist in this database. */
 function db_existing_tables(PDO $pdo): array {
     $wanted = ['users', 'access_logs', 'system_settings',
-               'histology_reports', 'cytology_reports', 'login_attempts'];
+               'histology_reports', 'cytology_reports', 'login_attempts',
+               'import_batches'];
 
     if (db_is_sqlite()) {
         $found = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table'")
@@ -205,6 +206,7 @@ function db_rebuild_sqlite_report_table(PDO $pdo, string $table): void {
             reviewed_at TEXT,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')),
+            import_batch_id INTEGER,
             UNIQUE (lab_no, lab_year)
         ",
         'cytology_reports' => "
@@ -243,6 +245,7 @@ function db_rebuild_sqlite_report_table(PDO $pdo, string $table): void {
             reviewed_at TEXT,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')),
+            import_batch_id INTEGER,
             UNIQUE (lab_no, lab_year)
         ",
     ];
@@ -268,6 +271,7 @@ function db_rebuild_sqlite_report_table(PDO $pdo, string $table): void {
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_{$prefix}_created_at ON $table (created_at DESC)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_{$prefix}_collection ON $table (date_of_collection)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_{$prefix}_surname ON $table (surname)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_{$prefix}_import_batch ON $table (import_batch_id)");
     $pdo->exec("DROP TRIGGER IF EXISTS trg_{$prefix}_updated_at");
     $pdo->exec("
         CREATE TRIGGER trg_{$prefix}_updated_at
@@ -278,4 +282,57 @@ function db_rebuild_sqlite_report_table(PDO $pdo, string $table): void {
         END
     ");
     $pdo->exec('PRAGMA foreign_keys = ON');
+}
+
+/**
+ * Import history: a batch row per uploaded file, and import_batch_id on
+ * each report so that file's records can be removed together.
+ * Safe to call on every request.
+ */
+function db_ensure_import_batches(PDO $pdo): void {
+    static $done = false;
+    if ($done) return;
+
+    $tables = db_existing_tables($pdo);
+    if (!in_array('histology_reports', $tables, true)) {
+        $done = true;
+        return;
+    }
+
+    if (db_is_sqlite()) {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS import_batches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL,
+                target_table TEXT NOT NULL,
+                lab_year INTEGER NOT NULL,
+                imported_by INTEGER REFERENCES users(id),
+                inserted_count INTEGER NOT NULL DEFAULT 0,
+                skipped_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            )
+        ");
+    } else {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS import_batches (
+                id SERIAL PRIMARY KEY,
+                filename VARCHAR(255) NOT NULL,
+                target_table VARCHAR(50) NOT NULL,
+                lab_year INTEGER NOT NULL,
+                imported_by INTEGER REFERENCES users(id),
+                inserted_count INTEGER NOT NULL DEFAULT 0,
+                skipped_count INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        ");
+    }
+
+    foreach (['histology_reports', 'cytology_reports'] as $table) {
+        if (!db_table_has_column($pdo, $table, 'import_batch_id')) {
+            $pdo->exec("ALTER TABLE $table ADD COLUMN import_batch_id INTEGER");
+        }
+        $prefix = $table === 'histology_reports' ? 'histology' : 'cytology';
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_{$prefix}_import_batch ON $table (import_batch_id)");
+    }
+    $done = true;
 }

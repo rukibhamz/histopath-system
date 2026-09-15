@@ -14,11 +14,10 @@ function normalize_header(string $h): string {
 /** Try to guess which DB column a CSV header maps to */
 function guess_column(string $header, array $db_columns): ?string {
     $norm = normalize_header($header);
-    // Access AutoNumber must never land in cytology/histology id.
-    if (in_array($norm, ['id', 'record_id', 'report_id'], true)) {
-        return null;
-    }
     $aliases = [
+        'id' => ['id'],
+        'record_id' => ['id'],
+        'report_id' => ['id'],
         'year' => ['lab_year'],
         'lab_year' => ['lab_year'],
         'accession_year' => ['lab_year'],
@@ -90,4 +89,32 @@ function parse_import_year(mixed $value): ?int {
     if (!ctype_digit((string)$value)) return null;
     $year = (int)$value;
     return ($year >= 1990 && $year <= 2100) ? $year : null;
+}
+
+/**
+ * Access AutoNumbers restart each year. Fold the import year into the
+ * primary key so 2023/178 and 2024/178 can both be stored. Already-large
+ * IDs (from a previous import or this system's own export) are kept as-is.
+ */
+function import_record_id(int $year, int $source_id): ?int {
+    if ($source_id <= 0) return null;
+    if ($source_id >= 1_000_000) return $source_id;
+    $id = ($year * 1_000_000) + $source_id;
+    return $id <= 2147483647 ? $id : null;
+}
+
+/** Original upload name, stripped of paths and odd characters. */
+function sanitize_import_filename(string $name): string {
+    $name = basename(str_replace('\\', '/', $name));
+    $name = preg_replace('/[^\p{L}\p{N}._ ()-]+/u', '_', $name) ?? 'import.csv';
+    $name = trim($name, '._ ');
+    return $name === '' ? 'import.csv' : mb_substr($name, 0, 255);
+}
+
+function import_report_type_label(string $table): string {
+    return match ($table) {
+        'histology_reports' => 'Histology',
+        'cytology_reports' => 'Cytology',
+        default => $table,
+    };
 }

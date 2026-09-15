@@ -26,6 +26,7 @@ $config = app_load_config();
 try {
     $pdo = app_pdo_from_config($config);
     db_ensure_lab_year($pdo);
+    db_ensure_import_batches($pdo);
 } catch (PDOException $e) {
     // Never show connection details to the browser - they name the server and user.
     error_log('Database connection failed: ' . $e->getMessage());

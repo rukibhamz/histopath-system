@@ -41,6 +41,17 @@ CREATE TABLE system_settings (
     updated_at      TEXT DEFAULT (datetime('now','localtime'))
 );
 
+CREATE TABLE import_batches (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename        TEXT NOT NULL,
+    target_table    TEXT NOT NULL,
+    lab_year        INTEGER NOT NULL,
+    imported_by     INTEGER REFERENCES users(id),
+    inserted_count  INTEGER NOT NULL DEFAULT 0,
+    skipped_count   INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT DEFAULT (datetime('now','localtime'))
+);
+
 CREATE TABLE histology_reports (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
     lab_no                  TEXT NOT NULL,
@@ -80,6 +91,7 @@ CREATE TABLE histology_reports (
     reviewed_at             TEXT,
     created_at              TEXT DEFAULT (datetime('now','localtime')),
     updated_at              TEXT DEFAULT (datetime('now','localtime')),
+    import_batch_id         INTEGER REFERENCES import_batches(id),
     UNIQUE (lab_no, lab_year)
 );
 
@@ -119,6 +131,7 @@ CREATE TABLE cytology_reports (
     reviewed_at             TEXT,
     created_at              TEXT DEFAULT (datetime('now','localtime')),
     updated_at              TEXT DEFAULT (datetime('now','localtime')),
+    import_batch_id         INTEGER REFERENCES import_batches(id),
     UNIQUE (lab_no, lab_year)
 );
 
@@ -139,12 +152,14 @@ CREATE INDEX idx_histology_submitted_by  ON histology_reports (submitted_by);
 CREATE INDEX idx_histology_created_at    ON histology_reports (created_at DESC);
 CREATE INDEX idx_histology_collection    ON histology_reports (date_of_collection);
 CREATE INDEX idx_histology_surname       ON histology_reports (surname);
+CREATE INDEX idx_histology_import_batch  ON histology_reports (import_batch_id);
 
 CREATE INDEX idx_cytology_status         ON cytology_reports (status);
 CREATE INDEX idx_cytology_submitted_by   ON cytology_reports (submitted_by);
 CREATE INDEX idx_cytology_created_at     ON cytology_reports (created_at DESC);
 CREATE INDEX idx_cytology_collection     ON cytology_reports (date_of_collection);
 CREATE INDEX idx_cytology_surname        ON cytology_reports (surname);
+CREATE INDEX idx_cytology_import_batch   ON cytology_reports (import_batch_id);
 
 CREATE INDEX idx_logs_created_at         ON access_logs (created_at DESC);
 CREATE INDEX idx_logs_user               ON access_logs (user_id);

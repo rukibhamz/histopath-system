@@ -81,4 +81,20 @@ ALTER TABLE cytology_reports DROP CONSTRAINT IF EXISTS cytology_reports_lab_no_k
 CREATE UNIQUE INDEX IF NOT EXISTS cytology_reports_lab_no_year_key
     ON cytology_reports (lab_no, lab_year);
 
+CREATE TABLE IF NOT EXISTS import_batches (
+    id              SERIAL PRIMARY KEY,
+    filename        VARCHAR(255) NOT NULL,
+    target_table    VARCHAR(50) NOT NULL,
+    lab_year        INTEGER NOT NULL,
+    imported_by     INTEGER REFERENCES users(id),
+    inserted_count  INTEGER NOT NULL DEFAULT 0,
+    skipped_count   INTEGER NOT NULL DEFAULT 0,
+    created_at      TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE histology_reports ADD COLUMN IF NOT EXISTS import_batch_id INTEGER;
+ALTER TABLE cytology_reports ADD COLUMN IF NOT EXISTS import_batch_id INTEGER;
+CREATE INDEX IF NOT EXISTS idx_histology_import_batch ON histology_reports (import_batch_id);
+CREATE INDEX IF NOT EXISTS idx_cytology_import_batch ON cytology_reports (import_batch_id);
+
 COMMIT;

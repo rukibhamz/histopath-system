@@ -3,12 +3,12 @@ require_once __DIR__ . '/../includes/auth.php';
 require_login();
 require_role(['admin']);
 
-// Columns each table accepts from an import. Access AutoNumber (`id`) is never
-// imported: yearly dumps reuse the same IDs and would collide. Lab year is set
-// by the admin for the whole file, not taken from a CSV column.
+// Columns each table accepts from an import. Access AutoNumber (`id`) is kept,
+// but namespaced with the import year so yearly dumps that reuse 1, 2, 3…
+// do not collide. Lab year is set by the admin for the whole file.
 $table_columns = [
     'histology_reports' => [
-        'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'hospital_no',
+        'id', 'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'hospital_no',
         'requesting_hospital', 'ward_clinic', 'date_of_collection', 'clinical_history',
         'nature_of_specimen', 'special_requests', 'provisional_diagnosis', 'previous_lab_no',
         'clinician', 'specimen_status', 'gross', 'microscopy', 'further_tests', 'bone_marrow',
@@ -16,7 +16,7 @@ $table_columns = [
         'date_out', 'adverse_incidents', 'cost',
     ],
     'cytology_reports' => [
-        'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'requesting_hospital',
+        'id', 'lab_no', 'surname', 'other_names', 'age', 'sex', 'ethnic_group', 'requesting_hospital',
         'hosp_no', 'ward_clinic', 'patients_tel_no', 'date_of_collection', 'clinical_history',
         'lmp', 'drug_history', 'radiation', 'previous_lab_no', 'nature_of_specimen', 'clinician',
         'clinician_tel_no', 'microscopy', 'diagnosis', 'recommendation', 'resident_doctors',
@@ -41,17 +41,138 @@ function clear_staged_import(): void {
     }
     unset($_SESSION['import_file'], $_SESSION['import_table'],
           $_SESSION['import_headers'], $_SESSION['import_preview'],
-          $_SESSION['import_year']);
+          $_SESSION['import_year'], $_SESSION['import_filename']);
+}
+
+/** Past imports, with how many of their reports are still in the database. */
+function fetch_import_batches(PDO $pdo): array {
+    try {
+        return $pdo->query("
+            SELECT b.*, u.full_name,
+                CASE b.target_table
+                    WHEN 'histology_reports' THEN (
+                        SELECT COUNT(*) FROM histology_reports r WHERE r.import_batch_id = b.id
+                    )
+                    WHEN 'cytology_reports' THEN (
+                        SELECT COUNT(*) FROM cytology_reports r WHERE r.import_batch_id = b.id
+                    )
+                    ELSE 0
+                END AS remaining
+            FROM import_batches b
+            LEFT JOIN users u ON u.id = b.imported_by
+            ORDER BY b.created_at DESC, b.id DESC
+        ")->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+function render_import_history(array $batches): void {
+    ?>
+    <div class="card" style="margin-top:18px;">
+        <div class="card__head">
+            <h2>Import history</h2>
+            <?php if ($batches): ?>
+                <span class="badge badge--plain"><?= count($batches) ?></span>
+            <?php endif; ?>
+        </div>
+        <?php if (!$batches): ?>
+            <div class="card__body">
+                <p class="hint" style="margin:0;">Files you import will be listed here so you can remove a whole batch if it was brought in by mistake.</p>
+            </div>
+        <?php else: ?>
+            <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Type</th>
+                            <th>Year</th>
+                            <th>Records</th>
+                            <th>Imported</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($batches as $batch):
+                        $remaining = (int)$batch['remaining'];
+                    ?>
+                        <tr>
+                            <td>
+                                <strong><?= e($batch['filename']) ?></strong>
+                                <div class="muted"><?= e($batch['full_name'] ?: 'Unknown') ?></div>
+                            </td>
+                            <td><?= e(import_report_type_label((string)$batch['target_table'])) ?></td>
+                            <td class="mono"><?= (int)$batch['lab_year'] ?></td>
+                            <td class="nowrap">
+                                <?= $remaining ?>
+                                <?php if ((int)$batch['skipped_count'] > 0): ?>
+                                    <span class="muted"> · <?= (int)$batch['skipped_count'] ?> skipped</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="muted nowrap"><?= e((string)$batch['created_at']) ?></td>
+                            <td class="right">
+                                <?php
+                                $confirm = 'Delete all ' . $remaining . ' record'
+                                    . ($remaining === 1 ? '' : 's')
+                                    . ' imported from ' . $batch['filename']
+                                    . '? This cannot be undone.';
+                                ?>
+                                <form method="POST" onsubmit="return confirm(<?= e(json_encode($confirm, JSON_UNESCAPED_UNICODE)) ?>);">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="step" value="delete_batch">
+                                    <input type="hidden" name="batch_id" value="<?= (int)$batch['id'] ?>">
+                                    <button class="btn btn--sm btn--reject" type="submit">Delete records</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php
 }
 
 $step = $_POST['step'] ?? 'upload';
 $upload_dir = sys_get_temp_dir();
 $upload_error = '';
+$notice = $_SESSION['import_notice'] ?? '';
+unset($_SESSION['import_notice']);
 
 // Explicit "start over" link
 if (($_GET['reset'] ?? '') === '1') {
     clear_staged_import();
     redirect('admin/import.php');
+}
+
+// ---- Remove one import and every report it brought in ----
+if ($step === 'delete_batch' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_verify();
+    $batch_id = (int)($_POST['batch_id'] ?? 0);
+    $stmt = $pdo->prepare('SELECT * FROM import_batches WHERE id = :id');
+    $stmt->execute(['id' => $batch_id]);
+    $batch = $stmt->fetch();
+    $target = $batch['target_table'] ?? '';
+
+    if (!$batch || !isset($table_columns[$target])) {
+        $upload_error = "That import could not be found.";
+    } else {
+        $pdo->beginTransaction();
+        $del = $pdo->prepare("DELETE FROM $target WHERE import_batch_id = :id");
+        $del->execute(['id' => $batch_id]);
+        $removed = $del->rowCount();
+        $pdo->prepare('DELETE FROM import_batches WHERE id = :id')->execute(['id' => $batch_id]);
+        $pdo->commit();
+
+        log_action($pdo, current_user_id(), 'delete_import', $target, $batch_id,
+            "Removed $removed records from {$batch['filename']} ({$batch['lab_year']})");
+        $_SESSION['import_notice'] = "Deleted $removed record"
+            . ($removed === 1 ? '' : 's')
+            . " from " . $batch['filename'] . ".";
+        redirect('admin/import.php');
+    }
 }
 
 // ---- STEP 1: upload CSV, show header row for mapping ----
@@ -91,6 +212,9 @@ if ($step === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['import_headers'] = $headers;
                 $_SESSION['import_preview'] = $preview;
                 $_SESSION['import_year'] = $import_year_posted;
+                $_SESSION['import_filename'] = sanitize_import_filename(
+                    (string)($_FILES['csv_file']['name'] ?? 'import.csv')
+                );
             }
             if ($handle) fclose($handle);
         }
@@ -124,12 +248,29 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $row_number = 1;
 
             $pdo->beginTransaction();
+
+            $now = sql_now();
+            $batch_stmt = $pdo->prepare("
+                INSERT INTO import_batches
+                    (filename, target_table, lab_year, imported_by, inserted_count, skipped_count, created_at)
+                VALUES
+                    (:filename, :target_table, :lab_year, :imported_by, 0, 0, $now)
+                RETURNING id
+            ");
+            $batch_stmt->execute([
+                'filename' => $_SESSION['import_filename'] ?? 'import.csv',
+                'target_table' => $target_table,
+                'lab_year' => $import_year,
+                'imported_by' => current_user_id(),
+            ]);
+            $batch_id = (int)$batch_stmt->fetchColumn();
+
             while (($row = fgetcsv($handle)) !== false) {
                 $row_number++;
 
                 $data = [];
                 foreach ($mapping as $idx => $db_col) {
-                    if ($db_col === '' || $db_col === 'id' || $db_col === 'lab_year') continue;
+                    if ($db_col === '' || $db_col === 'lab_year' || $db_col === 'import_batch_id') continue;
                     if (!in_array($db_col, $columns, true)) continue;
                     $value = $row[$idx] ?? null;
                     $value = is_string($value) ? trim($value) : $value;
@@ -138,6 +279,14 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         $data[$db_col] = parse_date($value);
                     } elseif ($db_col === 'sex') {
                         $data[$db_col] = parse_sex($value);
+                    } elseif ($db_col === 'id') {
+                        $id = parse_number($value);
+                        if ($id !== null) {
+                            $namespaced = import_record_id($import_year, (int)$id);
+                            if ($namespaced !== null) {
+                                $data[$db_col] = $namespaced;
+                            }
+                        }
                     } elseif ($db_col === 'age' || $db_col === 'cost') {
                         $data[$db_col] = parse_number($value);
                     } else {
@@ -150,6 +299,7 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     continue;
                 }
                 $data['lab_year'] = $import_year;
+                $data['import_batch_id'] = $batch_id;
                 if (empty($data['surname'])) {
                     // surname is NOT NULL - fill rather than lose the row
                     $data['surname'] = 'UNKNOWN';
@@ -177,7 +327,26 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             fclose($handle);
+
+            $pdo->prepare("
+                UPDATE import_batches
+                SET inserted_count = :inserted, skipped_count = :skipped
+                WHERE id = :id
+            ")->execute([
+                'inserted' => $inserted,
+                'skipped' => $skipped,
+                'id' => $batch_id,
+            ]);
+
             $pdo->commit();
+
+            // Explicit IDs do not advance a PostgreSQL SERIAL sequence on their own.
+            if (!db_is_sqlite()) {
+                $pdo->exec(
+                    "SELECT setval(pg_get_serial_sequence(" . $pdo->quote($target_table) . ", 'id'), "
+                    . "COALESCE((SELECT MAX(id) FROM $target_table), 1))"
+                );
+            }
 
             log_action($pdo, current_user_id(), 'import_records', $target_table, null,
                 "Imported $inserted records for $import_year, skipped $skipped");
@@ -194,6 +363,10 @@ render_header([
     'nav'   => 'import',
 ]);
 ?>
+
+<?php if ($notice): ?>
+    <div class="alert alert--ok"><?= e($notice) ?></div>
+<?php endif; ?>
 
 <?php if ($upload_error): ?>
     <div class="alert alert--error"><?= e($upload_error) ?></div>
@@ -229,6 +402,7 @@ render_header([
     <?php endif; ?>
 
     <a class="btn btn--primary" href="<?= app_url('admin/import.php') ?>">Import another file</a>
+    <?php render_import_history(fetch_import_batches($pdo)); ?>
 
 <?php elseif (!empty($_SESSION['import_headers'])): ?>
     <div class="card">
@@ -240,8 +414,8 @@ render_header([
             <p class="hint" style="padding:0 20px;">
                 Each column from your file is matched to a field where the name is recognised.
                 Check the sample values, correct anything wrong, and set columns you don't need
-                to "Ignore". Access record IDs are ignored automatically so yearly dumps
-                that reuse the same AutoNumbers do not collide.
+                to "Ignore". Access record IDs are stored with the year so 2023/178 and
+                2024/178 do not collide.
             </p>
             <form method="POST">
                 <?= csrf_field() ?>
@@ -362,11 +536,13 @@ render_header([
                 In Access, choose <strong>External Data &rarr; Export &rarr; Text File</strong>, tick
                 <em>Include field names on first row</em>, and save as <code>.csv</code>. If the
                 database won't open in Access, <code>mdb-export</code> will read it instead.
-                Import one year at a time and set that year above. Access ID columns are ignored
-                automatically; new records receive their own IDs.
+                Import one year at a time and set that year above. Access ID columns are
+                kept; the year is folded into the ID so the same AutoNumber can exist in
+                more than one year.
             </p>
         </div>
     </div>
+    <?php render_import_history(fetch_import_batches($pdo)); ?>
 <?php endif; ?>
 
 <?php render_footer(); ?>
