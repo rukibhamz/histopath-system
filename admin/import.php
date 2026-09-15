@@ -264,6 +264,7 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 'imported_by' => current_user_id(),
             ]);
             $batch_id = (int)$batch_stmt->fetchColumn();
+            $batch_stmt->closeCursor();
 
             while (($row = fgetcsv($handle)) !== false) {
                 $row_number++;
@@ -310,6 +311,7 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 // A failed statement poisons the whole PostgreSQL transaction, so each
                 // row gets its own savepoint: one bad row can't discard the rest.
+                $stmt = null;
                 $pdo->exec('SAVEPOINT import_row');
                 try {
                     $stmt = $pdo->prepare("
@@ -318,9 +320,14 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         ON CONFLICT (lab_no, lab_year) DO NOTHING
                     ");
                     $stmt->execute($data + ['submitted_by' => current_user_id()]);
+                    $wrote = $stmt->rowCount() > 0;
+                    $stmt->closeCursor();
                     $pdo->exec('RELEASE SAVEPOINT import_row');
-                    $stmt->rowCount() > 0 ? $inserted++ : $skipped++;
+                    $wrote ? $inserted++ : $skipped++;
                 } catch (Throwable $e) {
+                    if (isset($stmt) && $stmt instanceof PDOStatement) {
+                        $stmt->closeCursor();
+                    }
                     $pdo->exec('ROLLBACK TO SAVEPOINT import_row');
                     $errors[] = "Row $row_number (Lab No {$data['lab_no']}): " . $e->getMessage();
                     $skipped++;
@@ -328,15 +335,17 @@ if ($step === 'import' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             fclose($handle);
 
-            $pdo->prepare("
+            $count_stmt = $pdo->prepare("
                 UPDATE import_batches
                 SET inserted_count = :inserted, skipped_count = :skipped
                 WHERE id = :id
-            ")->execute([
+            ");
+            $count_stmt->execute([
                 'inserted' => $inserted,
                 'skipped' => $skipped,
                 'id' => $batch_id,
             ]);
+            $count_stmt->closeCursor();
 
             $pdo->commit();
 
