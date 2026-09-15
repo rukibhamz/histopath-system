@@ -6,11 +6,13 @@
  * account, and the address other computers on the intranet will use. On the last
  * step it writes includes/config.php, which is what marks the system as installed.
  *
- * Once that file exists this page refuses to run, so it cannot be used to point a
- * working installation at a different database.
+ * Once a database exists and has a user this page refuses to run, so it cannot
+ * be used to point a working installation at a different database. A leftover
+ * or incomplete config.php (copied folder, empty SQLite path) does not count.
  */
 require_once __DIR__ . '/includes/paths.php';
 require_once __DIR__ . '/includes/db.php';
+require_once __DIR__ . '/includes/install_state.php';
 require_once __DIR__ . '/includes/session.php';
 require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/schema_loader.php';
@@ -26,7 +28,7 @@ function h(?string $v): string {
 // ---------------------------------------------------------------------------
 // Already installed? Then this wizard is closed for business.
 // ---------------------------------------------------------------------------
-if (is_file(CONFIG_FILE)) {
+if (app_is_installed()) {
     http_response_code(403);
     ?>
     <!DOCTYPE html><html><head><meta charset="utf-8"><title>Already Installed</title>
@@ -37,7 +39,7 @@ if (is_file(CONFIG_FILE)) {
     </style></head><body>
     <h2>This system is already set up</h2>
     <div class="box">
-        <p>The setup wizard has been disabled because <code>includes/config.php</code> already exists.</p>
+        <p>The setup wizard has been disabled because this copy already has a working database and at least one user.</p>
         <p>To keep it that way, delete <code>install.php</code> from the server.
            To start over deliberately, remove <code>includes/config.php</code> first &mdash;
            note that this does not delete any data.</p>
