@@ -117,9 +117,7 @@ function schema_file(string $driver): string {
 
 /** Where the SQLite file should live by default: beside the web root, never inside it. */
 function suggested_sqlite_path(): string {
-    $doc_root = str_replace(DIRECTORY_SEPARATOR, '/', (string)realpath($_SERVER['DOCUMENT_ROOT'] ?? ''));
-    $parent = $doc_root !== '' ? dirname($doc_root) : dirname(__DIR__);
-    return $parent . '/histopath_data/histopath.sqlite';
+    return app_suggested_sqlite_path();
 }
 
 /** True if the path sits somewhere a browser could request it. */
@@ -322,20 +320,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'db_user'     => $db['db_user'],
                         'db_password' => $db['db_password'],
                     ];
-                $contents = "<?php\n"
-                    . "/**\n"
-                    . " * Database configuration, written by install.php on " . date('Y-m-d H:i') . ".\n"
-                    . " * Keep this file out of the web root's reach - includes/.htaccess denies it.\n"
-                    . " */\n"
-                    . "return " . var_export($settings_to_write, true) . ";\n";
 
-                if (@file_put_contents(CONFIG_FILE, $contents) === false) {
-                    $_SESSION['install_manual_config'] = $contents;
+                if (!app_write_config($settings_to_write)) {
+                    $_SESSION['install_manual_config'] = app_config_file_contents($settings_to_write);
                     $errors[] = "Setup finished, but includes/config.php could not be written. "
                               . "Create it by hand using the text shown below.";
                     $step = 5;
                 } else {
-                    @chmod(CONFIG_FILE, 0640);
                     $_SESSION['install_address'] = $details['server_address'];
                     $step = 5;
                 }
